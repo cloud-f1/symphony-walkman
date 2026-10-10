@@ -1,0 +1,12 @@
+{
+  "name": "symphony-walkman",
+  "description": "Symphony Walkman: which card is Claude working on, as a pedestrian signal.",
+  "owner": { "name": "cloud-f1" },
+  "plugins": [
+    {
+      "name": "symphony-walkman",
+      "source": "./",
+      "description": "Pedestrian-signal board for the Jira card Claude is working on."
+    }
+  ]
+}

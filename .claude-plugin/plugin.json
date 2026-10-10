@@ -1,0 +1,25 @@
+{
+  "name": "symphony-walkman",
+  "displayName": "Symphony Walkman",
+  "version": "0.1.0",
+  "description": "Pedestrian-signal board for Claude Code and Claude Desktop: the green walking man marks the Jira card Claude is working on, the red man marks a card waiting for you.",
+  "author": { "name": "cloud-f1" },
+  "homepage": "https://github.com/cloud-f1/symphony-walkman",
+  "repository": "https://github.com/cloud-f1/symphony-walkman",
+  "license": "MIT",
+  "keywords": ["jira", "symphony-workflow", "status", "board", "pedestrian-signal"],
+  "userConfig": {
+    "runs_dir": {
+      "type": "string",
+      "title": "symphony-workflow runs folder",
+      "description": "Optional. Folder holding <KEY>/run.json written by symphony-workflow (its docs/runs). Lets a card in plan_ready light the red man. Read only.",
+      "default": ""
+    },
+    "disk_path": {
+      "type": "string",
+      "title": "Disk to watch",
+      "description": "Path whose free space the board shows.",
+      "default": "/"
+    }
+  }
+}

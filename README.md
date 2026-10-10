@@ -1,0 +1,77 @@
+# Symphony Walkman
+
+A [Claude Code](https://claude.com/claude-code) plugin (a native Mod) that answers one question at a glance: **which card is Claude working on right now?** It works in the terminal and in Claude Desktop, and draws a pedestrian signal like the ones on Taiwanese crossings.
+
+Unofficial community project. MIT licensed.
+
+> **Status: v0.1.0, early.** The pure logic is unit-tested and the Mod passes `claude plugin test` and `claude plugin validate --strict` against stubbed hosts. It has **not** yet been run in a real interactive session, and the Desktop drawing has never been seen on a real screen. See [What is verified](#what-is-verified).
+
+## The signal
+
+| Light | Meaning |
+|---|---|
+| 🟢 walking man, with seconds | Claude is working on this card |
+| 🔴 standing man | The card needs you: a permission ask is open, or a symphony-workflow run is in `plan_ready` (the human review gate) |
+| 🔴 blinking | The last turn failed, or the run is `failed` |
+| ✓ | The run is `completed` |
+| · | Idle |
+
+## What it shows
+
+```
+🟢 CF1-195   devopsday-visuals         implementing  12:04
+🔴 CF1-201   pitch-copy                plan_ready    0:41
+✓  CF1-188   course-pricing            completed     3:12
+
+disk · 74 GB free · 84% used
+
+1 running · 1 done · 1 needs you
+```
+
+- A strip above the prompt shows the most urgent card (terminal: one text line; Desktop: the signal drawing plus the line).
+- `/walkman board` prints the board. `/walkman pane` opens it as a side pane; `/walkman pane close` closes it.
+
+## How it knows the card
+
+A card is a **git worktree whose branch starts with a Jira key**: `CF1-195-devopsday-visuals`. The Mod runs `git worktree list --porcelain`, so every card worktree of the repo gets its own row. Branches like `main` or `chore-x` are not cards. No Jira call is needed for this.
+
+Optional: set **symphony-workflow runs folder** in the plugin settings to the folder that holds `<KEY>/run.json` (symphony-workflow's `docs/runs`). The Mod then reads the run `state` and lights `plan_ready` red. It only reads.
+
+## What it will not do
+
+- It never writes to Jira, to symphony-workflow's files, or to your repo.
+- It makes no network calls and needs no API key.
+- If git, a run file or `df` is missing or unreadable, the row or the disk line is simply left out. It never throws into your session.
+
+## Install
+
+Needs Claude Code **2.1.287 or later**.
+
+```
+/plugin marketplace add cloud-f1/symphony-walkman
+/plugin install symphony-walkman --marketplace cloud-f1/symphony-walkman
+```
+
+## What is verified
+
+| Check | Result |
+|---|---|
+| `checks/core.check.ts` (9 tests: branch parsing, light priority, run state, `df`, board, SVG) | Passed |
+| `claude plugin test` (8 Mod tests on a stubbed host, terminal and desktop surfaces) | Passed |
+| `claude plugin validate --strict .` | Passed |
+| Real interactive terminal session | **Not run** |
+| Claude Desktop (the `Svg` signal, walking animation) | **Not run**; the drawing is only checked as a string |
+| `tool.check` returning `ask` while a permission dialog is open | Assumed from the API docs; stub-tested only |
+| `turn.complete` `reason` values meaning "failed" | **Guess**: `refusal` or anything containing `error` |
+| `plan_ready` lighting red from a real `run.json` | Parser tested; the Mod path with `runs_dir` set is **not** covered |
+| Windows | Disk line is skipped; paths untested |
+
+## Develop
+
+```bash
+npm ci
+npm test            # core checks (node --test) then `claude plugin test`
+claude plugin validate --strict .
+```
+
+`core/*.ts` is pure. `hooks/register.ts` is the only file that calls the mods API. See [CLAUDE.md](CLAUDE.md) and [docs/PLAN.md](docs/PLAN.md).

@@ -1,0 +1,14 @@
+{
+  "extends": "./.claude-plugin/types/tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "rootDir": "."
+  },
+  "include": [
+    ".claude-plugin/types/**/*.d.ts",
+    "hooks",
+    "core",
+    "tests",
+    "checks"
+  ]
+}

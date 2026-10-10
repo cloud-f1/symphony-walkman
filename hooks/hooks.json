@@ -1,0 +1,4 @@
+{
+  "description": "Symphony Walkman native Mod",
+  "modules": ["./register.ts"]
+}
