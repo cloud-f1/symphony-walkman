@@ -59,7 +59,8 @@ Needs Claude Code **2.1.287 or later**.
 | `checks/core.check.ts` (9 tests: branch parsing, light priority, run state, `df`, board, SVG) | Passed |
 | `claude plugin test` (8 Mod tests on a stubbed host, terminal and desktop surfaces) | Passed |
 | `claude plugin validate --strict .` | Passed |
-| Real interactive terminal session | **Not run** |
+| Real engine, headless (`claude -p --plugin-dir`, scratch repo with two card worktrees, 2026-10-11) | Passed: module loaded, all 7 event kinds registered, `turn.start` fired and ran `git`. Slash commands are not run headless, so the board output was not seen this way |
+| Real interactive terminal session (board, band, pane) | **Not run**: a scripted attempt captured only the startup escape codes |
 | Claude Desktop (the `Svg` signal, walking animation) | **Not run**; the drawing is only checked as a string |
 | `tool.check` returning `ask` while a permission dialog is open | Assumed from the API docs; stub-tested only |
 | `turn.complete` `reason` values meaning "failed" | **Guess**: `refusal` or anything containing `error` |
