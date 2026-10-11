@@ -49,7 +49,7 @@ Needs Claude Code **2.1.287 or later**.
 
 ```
 /plugin marketplace add cloud-f1/symphony-walkman
-/plugin install symphony-walkman --marketplace cloud-f1/symphony-walkman
+/plugin install symphony-walkman@symphony-walkman
 ```
 
 ### Optional: pair it with symphony-workflow
