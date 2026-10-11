@@ -11,4 +11,4 @@ description: Explain and operate the Symphony Walkman board. Use when the user a
 - `/walkman pane` opens the same board as a side pane; `/walkman pane close` closes it.
 - Green walking man = Claude is working on that card. Red standing man = it needs the person (a permission ask or a symphony-workflow run in `plan_ready`). Red with the word `failed` = the last turn failed (on Desktop the red man also blinks).
 - The plugin is read-only. To change a Jira card, use `symphony-workflow` (for example `transition` or `rollup`), not this plugin.
-- A model cannot run slash commands; if the user wants the board, tell them to type `/walkman` (colored pane) or `/walkman board` (printed), and `/walkman help` for the legend, `/walkman docker` for containers, `/walkman doctor` to check the setup and `/walkman version` for versions.
+- A model cannot run slash commands; if the user wants the board, tell them to type `/walkman` (colored pane) or `/walkman board` (printed), and `/walkman help` for the legend, `/walkman doctor` to check the setup and `/walkman version` for versions.

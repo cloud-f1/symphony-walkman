@@ -6,7 +6,7 @@ const PORCELAIN =
   'worktree /r/.claude/worktrees/a\nHEAD def\nbranch refs/heads/CF1-195-devopsday-visuals\n'
 const DF = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/d 488245288 400000000 77594624 84% /\n'
 
-interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; docker?: 'ok' | 'missing' | 'down' }
+interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number }
 
 function stubs(on: any, setup: Setup = {}) {
   const files = setup.files ?? {}
@@ -15,7 +15,6 @@ function stubs(on: any, setup: Setup = {}) {
   let worktreeCalls = 0
   const jiraCalls: string[] = []
   const jiraEnvs: Record<string, string>[] = []
-  const dockerCalls: string[] = []
   mock.clock(on)
   on('env.get', (_: any, e: any) => ({ value: e.name === 'HOME' ? '/home/u' : setup.env?.[e.name] }))
   on('session.cwd', () => ({ value: CWD }))
@@ -30,14 +29,6 @@ function stubs(on: any, setup: Setup = {}) {
     if (cmd === 'git' && a === 'worktree') return { value: { exitCode: 0, stdout: setup.porcelain ?? PORCELAIN, stderr: '' } }
     if (cmd === 'git' && a === 'rev-parse' && b === '--show-toplevel') return { value: { exitCode: 0, stdout: CWD + '\n', stderr: '' } }
     if (cmd === 'uv' || cmd === 'uvx') { jiraCalls.push(e.argv.join(' ')); if (e.init?.env) jiraEnvs.push(e.init.env); return { value: { exitCode: setup.jiraExit ?? 0, stdout: setup.jiraOut ?? '', stderr: setup.jiraExit ? 'Jira API error 401' : '' } } }
-    if (cmd === 'docker') {
-      dockerCalls.push(e.argv.join(' '))
-      if (setup.docker === 'missing') return { value: { exitCode: 127, stdout: '', stderr: 'docker: command not found' } }
-      if (setup.docker === 'down') return { value: { exitCode: 1, stdout: '', stderr: 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock' } }
-      if (a === 'version') return { value: { exitCode: 0, stdout: '29.4.0\n', stderr: '' } }
-      if (a === 'ps') return { value: { exitCode: 0, stdout: 'api-1\tshop-api\tUp 4 hours\ndb-1\tpostgres:16\tUp 3 days (healthy)\n', stderr: '' } }
-      return { value: { exitCode: 0, stdout: 'Images\t18\t13.29GB\t5.0GB (37%)\n', stderr: '' } }
-    }
     if (cmd === 'claude') return { value: { exitCode: 0, stdout: '2.1.296 (Claude Code)\n', stderr: '' } }
     if (cmd === 'uvx' && a === '--version') return { value: { exitCode: 0, stdout: 'uvx 0.9\n', stderr: '' } }
     if (cmd === 'df') return { value: { exitCode: 0, stdout: DF, stderr: '' } }
@@ -54,7 +45,7 @@ function stubs(on: any, setup: Setup = {}) {
   on('session.start', () => ({ cwd: CWD }))
   on('turn.start', (_: any, e: any) => ({ turnId: e.turnId }))
   on('turn.complete', (_: any, e: any) => ({ text: e.answer ?? '' }))
-  return { registered, panes, jiraCalls, dockerCalls, jiraEnvs }
+  return { registered, panes, jiraCalls, jiraEnvs }
 }
 
 const walkman = ($: any, args: string): Promise<{ text: string }> => $.command.run({ command: 'walkman', args })
@@ -218,31 +209,9 @@ test('a missing credentials file says where it looked and never runs anything', 
 test('/walkman version prints the plugin version, the symphony-workflow release and Claude Code', async ($, on) => {
   stubs(on)
   const out = (await walkman($, 'version')).text
-  expect(out).toContain('symphony-walkman 0.5.0')
+  expect(out).toContain('symphony-walkman 0.5.1')
   expect(out).toContain('symphony-workflow v')
   expect(out).toContain('Claude Code 2.1.296')
-})
-
-test('/walkman docker lists containers and disk use, and only ever runs read-only docker commands', async ($, on) => {
-  const s = stubs(on, { docker: 'ok' })
-  const out = (await walkman($, 'docker')).text
-  expect(out).toContain('Docker 29.4.0 · 2 running')
-  expect(out).toContain('shop-api')
-  expect(out).toContain('reclaimable 5.0GB (37%)')
-  expect(s.dockerCalls.length).toBe(3)
-  for (const call of s.dockerCalls) expect(call).not.toMatch(/\b(rm|stop|kill|run|exec|prune|restart|pull|push|build)\b/)
-})
-
-test('/walkman docker says so when docker is missing or its daemon is down', async ($, on) => {
-  stubs(on, { docker: 'missing' })
-  expect((await walkman($, 'docker')).text).toContain('not found on this machine')
-})
-
-test('/walkman docker with a stopped daemon explains how to continue', async ($, on) => {
-  stubs(on, { docker: 'down' })
-  const out = (await walkman($, 'docker')).text
-  expect(out).toContain('daemon is not answering')
-  expect(out).toContain('Start Docker Desktop')
 })
 
 test('/walkman doctor words the state without showing credential values', async ($, on) => {
@@ -255,10 +224,19 @@ test('/walkman doctor words the state without showing credential values', async 
   expect(out).toContain('uvx is available')
 })
 
+test('a removed or unknown option says so and shows the help instead of the board', async ($, on) => {
+  stubs(on)
+  const out = (await walkman($, 'docker')).text
+  expect(out).toContain('unknown option "docker"')
+  expect(out).toContain('/walkman version')
+  expect(out).not.toContain('Walkman board')
+})
+
 test('help lists every command', async ($, on) => {
   stubs(on)
   const out = (await walkman($, 'help')).text
-  for (const word of ['board', 'docker', 'doctor', 'version', 'pane close']) expect(out).toContain(word)
+  expect(out).not.toContain('docker')
+  for (const word of ['board', 'doctor', 'version', 'pane close']) expect(out).toContain(word)
 })
 
 const CRED_ENV = { WALKMAN_JIRA_PROJECT: 'CF1', WALKMAN_JIRA_BASE_URL: 'https://x.atlassian.net', WALKMAN_JIRA_EMAIL: 'me@x.com', WALKMAN_JIRA_API_TOKEN: 'tok-secret-123' }
