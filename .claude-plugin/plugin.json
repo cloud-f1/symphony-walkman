@@ -1,7 +1,7 @@
 {
   "name": "symphony-walkman",
   "displayName": "Symphony Walkman",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Pedestrian-signal board for Claude Code and Claude Desktop: the green walking man marks the Jira card Claude is working on, the red man marks a card waiting for you.",
   "author": { "name": "cloud-f1" },
   "homepage": "https://github.com/cloud-f1/symphony-walkman",
@@ -21,10 +21,16 @@
       "description": "For example JEV. With the setting below, the board shows card titles and the project's in-progress cards. Read only.",
       "default": ""
     },
+    "jira_env_file": {
+      "type": "string",
+      "title": "Jira credentials file (optional)",
+      "description": "A .env with JIRA_BASE_URL, JIRA_EMAIL and JIRA_API_TOKEN. Default: ~/.config/symphony-workflow/.env. The Jira lookup runs the released symphony-workflow through uvx with it, so no clone is needed.",
+      "default": ""
+    },
     "symphony_workflow_dir": {
       "type": "string",
       "title": "symphony-workflow checkout (optional)",
-      "description": "Folder of the symphony-workflow clone that holds its .env. Walkman runs `uv run symphony-workflow search` there; it never writes to Jira and holds no key.",
+      "description": "Only if you run symphony-workflow from a clone: its folder (holds the .env). Leave empty to use the released CLI through uvx.",
       "default": ""
     },
     "disk_path": {

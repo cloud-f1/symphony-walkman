@@ -10,7 +10,7 @@ The Walkman plugin only reads. Ticket changes go through the `jira-ticket-ops` s
 
 ## Prerequisite
 
-Install the `symphony-workflow-ops` plugin and have the `symphony-workflow` CLI runnable (see that repo's README). If either is missing, say so and stop. Do not fall back to a Jira MCP server.
+The `symphony-workflow-ops` plugin comes with Walkman (one install brings both). The `symphony-workflow` CLI runs through `uvx` with the credentials file (`npx --yes github:cloud-f1/symphony-walkman setup` prepares it). If either is missing, say so and stop. Do not fall back to a Jira MCP server.
 
 ## WALK rules
 

@@ -69,22 +69,22 @@ In progress in Jira
   JEV-35    The default goal no longer drops…  In Progress
 ```
 
-It runs `uv run --env-file .env symphony-workflow search '<JQL>'` in your [symphony-workflow](https://github.com/cloud-f1/symphony-workflow) clone, at most once a minute and never while drawing. The query is fixed to your project's Story-level cards that are In Progress, plus the cards that have a worktree. Set it up in two places:
+It runs the released [symphony-workflow](https://github.com/cloud-f1/symphony-workflow) CLI with `uvx` (no clone, no `uv sync`): `uvx --env-file ~/.config/symphony-workflow/.env --from git+https://github.com/cloud-f1/symphony-workflow@v0.5.2 symphony-workflow search '<JQL>'`. It runs in the background, at most once a minute, and never while drawing; the first run downloads about 95 MB (`setup` does that for you). The query is fixed to your project's Story-level cards that are In Progress, plus the cards that have a worktree. Two settings:
 
 - Per repo, in that repo's `.claude/settings.json` (so each repo names its own project): `{ "env": { "WALKMAN_JIRA_PROJECT": "JEV" } }`
-- Per person, once: the plugin setting **symphony-workflow checkout** (or the env var `WALKMAN_SYMPHONY_WORKFLOW_DIR`) set to your clone, which holds the `.env` with your Jira credentials.
+- Per person, once: a file with `JIRA_BASE_URL`, `JIRA_EMAIL` and `JIRA_API_TOKEN` at `~/.config/symphony-workflow/.env` (`npx … setup` creates it), or point `WALKMAN_JIRA_ENV_FILE` (or the plugin setting **Jira credentials file**) somewhere else. If you run symphony-workflow from a clone, set `WALKMAN_SYMPHONY_WORKFLOW_DIR` to it and Walkman uses that clone's `.env` the old way.
 
-If the lookup fails (no `uv`, bad credentials, offline), the board still prints and says `jira lookup: …` on one line. `/walkman debug` shows the last result.
+If the lookup fails (no `uvx`, no credentials file, bad credentials, offline), the board still prints and says `jira lookup: …` on one line. `/walkman debug` shows the last result.
 
 ## What it will not do
 
-- It never writes to Jira, to symphony-workflow's files, or to your repo.
-- It makes no network calls of its own and holds no API key. The optional Jira lookup only runs the read-only `symphony-workflow search` you point it at; your credentials stay in that clone's `.env`.
+- The plugin never writes to Jira, to symphony-workflow's files, or to your repo. (The separate setup CLI below does write the repo's `.claude/settings.json` and your credentials file, but only after it shows a plan and you agree.)
+- The plugin makes no network calls of its own and holds no API key. The optional Jira lookup only runs the read-only `symphony-workflow search`; your credentials stay in the credentials file you chose.
 - If git, a run file or `df` is missing or unreadable, the row or the disk line is simply left out. It never throws into your session.
 
 ## Quick setup (CLI)
 
-One command checks your machine and configures a repo, including the `symphony-workflow` plugin and clone that the Jira lookup needs. Node 18 or newer, no install:
+One command checks your machine and configures a repo. Node 18 or newer, nothing to install first:
 
 ```bash
 cd your-repo
@@ -93,27 +93,18 @@ npx --yes github:cloud-f1/symphony-walkman setup     # shows a plan, asks, then 
 npx --yes github:cloud-f1/symphony-walkman card JEV-47   # worktree + branch JEV-47-<title> for a card
 ```
 
-`setup` does, in order, only what is missing: installs the `symphony-workflow-ops` plugin (a separate plugin, the skills for ticket work), clones [symphony-workflow](https://github.com/cloud-f1/symphony-workflow) and runs `uv sync`, copies its `.env.example` to `.env` (mode 600) for you to fill in, writes `WALKMAN_JIRA_PROJECT` to the repo's `.claude/settings.json` (guessed from your git history, or `--project JEV`) and your clone path to `.claude/settings.local.json` (personal, not committed), then runs the Jira lookup to prove it works. It never asks for or prints a token, never writes to Jira, and `--dry-run` shows the plan without changing anything. Restart Claude Code afterwards.
+`setup` does, in order, only what is missing: installs the plugin (its marketplace also installs the `symphony-workflow-ops` skills, see Install), creates `~/.config/symphony-workflow/.env` (mode 600) for your Jira credentials, or copies them from an older symphony-workflow clone if it finds one, downloads the symphony-workflow CLI once (about 95 MB) so lookups are fast, writes `WALKMAN_JIRA_PROJECT` to the repo's `.claude/settings.json` (guessed from your git history, or `--project JEV`), then runs the Jira lookup to prove it works. It never asks for or prints a token, never writes to Jira, and `--dry-run` shows the plan without changing anything. Restart Claude Code afterwards. This CLI is separate from the plugin: the plugin only reads, the CLI writes settings after showing you a plan.
 
 ## Install
 
-Needs Claude Code **2.1.287 or later**.
+Needs Claude Code **2.1.287 or later**. Two commands, inside Claude Code:
 
 ```
 /plugin marketplace add cloud-f1/symphony-walkman
 /plugin install symphony-walkman@symphony-walkman
 ```
 
-### Optional: pair it with symphony-workflow
-
-Walkman only reads. To move the Jira cards it shows (audit, transition, roll up), add the `symphony-workflow-ops` plugin, which ships the `jira-ticket-ops` skill:
-
-```
-/plugin marketplace add cloud-f1/symphony-workflow
-/plugin install symphony-workflow-ops@symphony-workflow-marketplace
-```
-
-That plugin does not include the CLI itself; clone [cloud-f1/symphony-workflow](https://github.com/cloud-f1/symphony-workflow) and run `uv sync`. Walkman works without any of this. If you set `runs_dir` (or the env var `WALKMAN_RUNS_DIR`, which can be set per repo like the Jira project) to that repo's `docs/runs`, a card whose run is in `plan_ready` lights the red man.
+The second one also installs `symphony-workflow-ops` (skills for ticket work with the symphony-workflow CLI): this marketplace lists it next to Walkman, so one install brings both. If you already installed `symphony-workflow-ops` from its own marketplace you will have two copies of those skills; uninstall one. Then type `/walkman`.
 
 ## Updates
 
@@ -155,6 +146,8 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | Real interactive terminal session, installed from the public marketplace (owner screenshots, 2026-10-11) | Passed: `/walkman board` printed both card rows with the disk line; the pane opened and closed |
 | Real interactive terminal session, scripted (a pty with a terminal emulator, `--plugin-dir`, a scratch repo with two card worktrees, 2026-10-11) | Passed: `/walkman` is in the `/` menu with its description; the pane opens with theme colors (green, red, dim) and a legend; `/walkman board` prints after the pane was open; the band shows `🟢 running` with the clock ticking 0:03, 0:07 during a real turn and goes back to idle. Found and fixed in 0.1.5: an empty board after the pane opened, and a band that stayed idle during a turn |
 | Jira lookup in a scripted real session (repo on `main`, `WALKMAN_JIRA_PROJECT=JEV`, the real symphony-workflow CLI, 2026-10-11) | Passed: on `main` the board and pane listed the four In Progress JEV Stories read live from Jira; in a `JEV-48-…` worktree the row showed the Jira title and the list left that card out |
+| One install brings both plugins (isolated Claude profile, 2026-10-11) | Passed: with only this marketplace added, `/plugin install symphony-walkman@symphony-walkman` printed `+ 1 dependency: symphony-workflow-ops` and both plugins and all their skills were present. A dependency on a plugin in a different marketplace failed instead (`Dependency ... not found. Is the marketplace added?`), which is why the skills plugin is listed here |
+| Jira lookup through `uvx` with a credentials file, no clone (real session, 2026-10-11) | Passed: on `main` of a scratch repo with only `WALKMAN_JIRA_PROJECT` and `WALKMAN_JIRA_ENV_FILE` set, `/walkman board` listed the JEV cards and `/walkman debug` said `jira: 4 issues, last read ok` |
 | Setup CLI on the real jev-agent-kit and a scratch clone of it (2026-10-11) | Passed: `doctor` found the live JEV lookup (4 In Progress Stories) and suggested the project from git history; `setup --yes` wrote both settings files and the next real session listed the JEV cards; `card JEV-48` made the worktree with a slug from the Jira title. Not run: the plugin install and clone steps (the machine already had both), and Windows |
 | The signal drawings | Rendered in headless Chrome and looked at: green walking man, red standing man, darker red failed, green done, grey idle, with the countdown. **Not run:** inside Claude Desktop itself (the `Svg` element and animation there), which I cannot drive |
 | A permission ask lights the red man | Passed in a real session (default permission mode, a Write tool call): while the dialog "Do you want to create hello.txt?" was open, the pane showed `🔴 WALK-21 needs you` with a running clock, and the trace showed `tool.check verdict="ask"`. Note: the dialog replaces the prompt area, so the band above the prompt is hidden while it is open; keep the pane open (`/walkman`) to see the red man then |
