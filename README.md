@@ -12,7 +12,7 @@ Unofficial community project. MIT licensed.
 |---|---|
 | 🟢 walking man, with seconds | Claude is working on this card |
 | 🔴 standing man | The card needs you: a permission ask is open, or a symphony-workflow run is in `plan_ready` (the human review gate) |
-| 🔴 blinking | The last turn failed, or the run is `failed` |
+| 🔴 failed | The last turn failed, or the run is `failed`. On Desktop the red man also blinks; in the terminal it is the word `failed` in red |
 | ✓ | The run is `completed` |
 | · | Idle |
 
@@ -113,7 +113,7 @@ Walkman only reads. To move the Jira cards it shows (audit, transition, roll up)
 /plugin install symphony-workflow-ops@symphony-workflow-marketplace
 ```
 
-That plugin does not include the CLI itself; clone [cloud-f1/symphony-workflow](https://github.com/cloud-f1/symphony-workflow) and run `uv sync`. Walkman works without any of this. If you set `runs_dir` to that repo's `docs/runs`, a card whose run is in `plan_ready` lights the red man.
+That plugin does not include the CLI itself; clone [cloud-f1/symphony-workflow](https://github.com/cloud-f1/symphony-workflow) and run `uv sync`. Walkman works without any of this. If you set `runs_dir` (or the env var `WALKMAN_RUNS_DIR`, which can be set per repo like the Jira project) to that repo's `docs/runs`, a card whose run is in `plan_ready` lights the red man.
 
 ## Updates
 
@@ -156,11 +156,11 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | Real interactive terminal session, scripted (a pty with a terminal emulator, `--plugin-dir`, a scratch repo with two card worktrees, 2026-10-11) | Passed: `/walkman` is in the `/` menu with its description; the pane opens with theme colors (green, red, dim) and a legend; `/walkman board` prints after the pane was open; the band shows `🟢 running` with the clock ticking 0:03, 0:07 during a real turn and goes back to idle. Found and fixed in 0.1.5: an empty board after the pane opened, and a band that stayed idle during a turn |
 | Jira lookup in a scripted real session (repo on `main`, `WALKMAN_JIRA_PROJECT=JEV`, the real symphony-workflow CLI, 2026-10-11) | Passed: on `main` the board and pane listed the four In Progress JEV Stories read live from Jira; in a `JEV-48-…` worktree the row showed the Jira title and the list left that card out |
 | Setup CLI on the real jev-agent-kit and a scratch clone of it (2026-10-11) | Passed: `doctor` found the live JEV lookup (4 In Progress Stories) and suggested the project from git history; `setup --yes` wrote both settings files and the next real session listed the JEV cards; `card JEV-48` made the worktree with a slug from the Jira title. Not run: the plugin install and clone steps (the machine already had both), and Windows |
-| Claude Desktop (the `Svg` signal, walking animation) | **Not run**; the drawing is only checked as a string |
-| `tool.check` returning `ask` while a permission dialog is open | Assumed from the API docs; stub-tested only |
-| `turn.complete` `reason` values meaning "failed" | **Guess**: `refusal` or anything containing `error` |
-| `plan_ready` lighting red from a real `run.json` | Parser tested; the Mod path with `runs_dir` set is **not** covered |
-| Windows | Disk line is skipped; paths untested |
+| The signal drawings | Rendered in headless Chrome and looked at: green walking man, red standing man, darker red failed, green done, grey idle, with the countdown. **Not run:** inside Claude Desktop itself (the `Svg` element and animation there), which I cannot drive |
+| A permission ask lights the red man | Passed in a real session (default permission mode, a Write tool call): while the dialog "Do you want to create hello.txt?" was open, the pane showed `🔴 WALK-21 needs you` with a running clock, and the trace showed `tool.check verdict="ask"`. Note: the dialog replaces the prompt area, so the band above the prompt is hidden while it is open; keep the pane open (`/walkman`) to see the red man then |
+| A failed turn lights the red light | Passed in a real session: with the API pointed at a dead port the turn failed after Claude Code's retries (about 4 minutes) with `turn.complete reason="error"`, and the pane showed `🔴 WALK-21 failed`. The rule `reason` contains `error` or is `refusal` matches what was seen; `refusal` itself was not triggered |
+| `plan_ready` lighting red from a real `run.json` | Passed in a real session (`WALKMAN_RUNS_DIR` pointing at a folder with `WALK-22/run.json` in `plan_ready`): the band showed `🔴 WALK-22 needs you`, the board row said `plan_ready`, and its clock advanced |
+| Windows | **Not run**: no Windows machine. The disk line is skipped there and paths are untested |
 
 ## Develop
 
