@@ -14,6 +14,7 @@ import { signalSvg } from '../core/svg.ts'
 import type { CardRow, Disk, RunState } from '../core/contracts.ts'
 
 const PANE_ID = 'walkman-pane'
+const SETUP_COMMAND = 'npx --yes github:cloud-f1/symphony-walkman setup'
 const REFRESH_MS = 3000 // draws can repeat often; reread git / files at most this often
 
 // Session-local state. Resets on reload.
@@ -268,7 +269,7 @@ export function register(on: On, options?: PluginOptions) {
       await refresh($)
       return { text: ['Walkman debug', `rows: ${cache.rows.map((r) => r.key + ':' + r.light + '@' + r.worktree).join(', ') || '(none)'}`, `live: ${[...live.entries()].map(([k, v]) => k + '=' + JSON.stringify(v)).join('; ') || '(none)'}`, `read: ${cache.why ?? '(none)'}`, `band renders: ${renders}`, `jira: ${jira.issues.length} issues, last read ${jira.at === -Infinity ? 'never' : 'ok'}${jira.error ? ', error ' + jira.error : ''}`, ...trace].join('\n') }
     }
-    if (sub === 'help') return { text: ['Walkman', HELP, plain(LEGEND)].join('\n') }
+    if (sub === 'help') return { text: ['Walkman', HELP, 'Set up Jira linking: ' + SETUP_COMMAND, plain(LEGEND)].join('\n') }
     if (sub === 'pane' && arg === 'close') {
       try {
         await $.ui.close({ id: PANE_ID })
@@ -287,7 +288,8 @@ export function register(on: On, options?: PluginOptions) {
     // The host puts "<plugin>:" in front of the first line, so a header line keeps the rows aligned.
     const v = view()
     const lines = renderBoard(v.rows, cache.disk, await $.clock.now(), v.others)
-    return { text: ['Walkman board', ...lines, ...(cache.rows.length === 0 && cache.why && !/ git=0\b/.test(cache.why) ? ['(could not read git: ' + cache.why + ')'] : []), ...(jira.error ? ['(jira lookup: ' + jira.error + ')'] : []), '', plain(LEGEND)].join('\n') }
+    const linked = (await jiraSettings($).catch(() => ({ project: '', dir: '' }))).project !== ''
+    return { text: ['Walkman board', ...lines, ...(cache.rows.length === 0 && cache.why && !/ git=0\b/.test(cache.why) ? ['(could not read git: ' + cache.why + ')'] : []), ...(jira.error ? ['(jira lookup: ' + jira.error + ')'] : []), ...(linked ? [] : ['', 'Not linked to Jira. Set WALKMAN_JIRA_PROJECT, or run: ' + SETUP_COMMAND]), '', plain(LEGEND)].join('\n') }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {

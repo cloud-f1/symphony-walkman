@@ -147,6 +147,18 @@ test('a failing Jira lookup never breaks the board', async ($, on) => {
   expect(out).toContain('jira lookup: exit 1')
 })
 
+test('an unlinked repo is told how to link it, a linked one is not', async ($, on) => {
+  stubs(on)
+  const unlinked = (await walkman($, 'board')).text
+  expect(unlinked).toContain('WALKMAN_JIRA_PROJECT')
+  expect(unlinked).toContain('symphony-walkman setup')
+})
+
+test('a linked repo gets no setup nag', async ($, on) => {
+  stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT })
+  expect((await walkman($, 'board')).text).not.toContain('Not linked to Jira')
+})
+
 test('without a Jira project the plugin never runs symphony-workflow', async ($, on) => {
   const s = stubs(on)
   await walkman($, 'board')

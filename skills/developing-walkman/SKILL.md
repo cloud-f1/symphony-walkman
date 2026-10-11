@@ -13,7 +13,7 @@ A native Claude Code Mod (TypeScript, no build step, no runtime dependencies) th
 ## Commands
 
 ```bash
-node --test checks/*.check.ts      # pure core checks (Node >= 22.18)
+node --experimental-strip-types --test checks/*.check.ts      # pure core checks (Node >= 22.6; the flag is needed below 22.18)
 claude plugin test                 # Mod tests on a stubbed host (Claude Code 2.1.287+)
 claude plugin validate --strict .  # manifests + Mod static analysis
 npm test                           # both of the first two
@@ -46,3 +46,7 @@ Core checks live in `checks/*.check.ts` on purpose: `claude plugin test` loads e
 - Skills are named verb-ing, lowercase kebab-case, and say what they do: `using-walkman`, `developing-walkman`, `tracking-walk-tickets`. Do not repeat the plugin name (Claude Code already shows `symphony-walkman:` in front), and keep the folder name equal to `name:`.
 - All skills here are `user-invocable: false`; the only thing a person types is `/walkman`.
 - Slash commands are short nouns or verbs (`/walkman`), because people type them.
+
+## The setup CLI
+
+`cli/walkman.mjs` (plain ESM, no dependencies, Node 18+ so `npx` runs it anywhere) has `doctor`, `setup` and `card`. Keep it that way: it must never print a credential (read `.env` for names only), must show a plan and ask before changing anything, and must refuse to overwrite a settings file it cannot parse. Its pure parts are tested in `checks/cli.check.ts`.
