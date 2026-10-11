@@ -82,6 +82,19 @@ If the lookup fails (no `uv`, bad credentials, offline), the board still prints 
 - It makes no network calls of its own and holds no API key. The optional Jira lookup only runs the read-only `symphony-workflow search` you point it at; your credentials stay in that clone's `.env`.
 - If git, a run file or `df` is missing or unreadable, the row or the disk line is simply left out. It never throws into your session.
 
+## Quick setup (CLI)
+
+One command checks your machine and configures a repo, including the `symphony-workflow` plugin and clone that the Jira lookup needs. Node 18 or newer, no install:
+
+```bash
+cd your-repo
+npx --yes github:cloud-f1/symphony-walkman doctor    # what is set, what is missing, how to fix each
+npx --yes github:cloud-f1/symphony-walkman setup     # shows a plan, asks, then does it
+npx --yes github:cloud-f1/symphony-walkman card JEV-47   # worktree + branch JEV-47-<title> for a card
+```
+
+`setup` does, in order, only what is missing: installs the `symphony-workflow-ops` plugin (a separate plugin, the skills for ticket work), clones [symphony-workflow](https://github.com/cloud-f1/symphony-workflow) and runs `uv sync`, copies its `.env.example` to `.env` (mode 600) for you to fill in, writes `WALKMAN_JIRA_PROJECT` to the repo's `.claude/settings.json` (guessed from your git history, or `--project JEV`) and your clone path to `.claude/settings.local.json` (personal, not committed), then runs the Jira lookup to prove it works. It never asks for or prints a token, never writes to Jira, and `--dry-run` shows the plan without changing anything. Restart Claude Code afterwards.
+
 ## Install
 
 Needs Claude Code **2.1.287 or later**.
@@ -135,13 +148,14 @@ Auto-update has had reports of fetching without applying a new version in some 2
 
 | Check | Result |
 |---|---|
-| `checks/*.check.ts` (17 tests: branch parsing, light priority, run state, `df`, board, styled board and pane, SVG, release version match) | Passed |
+| `checks/*.check.ts` (30 tests incl. the CLI: branch parsing, light priority, run state, `df`, board, styled board and pane, SVG, release version match) | Passed |
 | `claude plugin test` (8 Mod tests on a stubbed host, terminal and desktop surfaces) | Passed |
 | `claude plugin validate --strict .` | Passed |
 | Real engine, headless (`claude -p --plugin-dir`, scratch repo with two card worktrees, 2026-10-11) | Passed: module loaded, all 7 event kinds registered, `turn.start` fired and ran `git`. Slash commands are not run headless, so the board output was not seen this way |
 | Real interactive terminal session, installed from the public marketplace (owner screenshots, 2026-10-11) | Passed: `/walkman board` printed both card rows with the disk line; the pane opened and closed |
 | Real interactive terminal session, scripted (a pty with a terminal emulator, `--plugin-dir`, a scratch repo with two card worktrees, 2026-10-11) | Passed: `/walkman` is in the `/` menu with its description; the pane opens with theme colors (green, red, dim) and a legend; `/walkman board` prints after the pane was open; the band shows `🟢 running` with the clock ticking 0:03, 0:07 during a real turn and goes back to idle. Found and fixed in 0.1.5: an empty board after the pane opened, and a band that stayed idle during a turn |
 | Jira lookup in a scripted real session (repo on `main`, `WALKMAN_JIRA_PROJECT=JEV`, the real symphony-workflow CLI, 2026-10-11) | Passed: on `main` the board and pane listed the four In Progress JEV Stories read live from Jira; in a `JEV-48-…` worktree the row showed the Jira title and the list left that card out |
+| Setup CLI on the real jev-agent-kit and a scratch clone of it (2026-10-11) | Passed: `doctor` found the live JEV lookup (4 In Progress Stories) and suggested the project from git history; `setup --yes` wrote both settings files and the next real session listed the JEV cards; `card JEV-48` made the worktree with a slug from the Jira title. Not run: the plugin install and clone steps (the machine already had both), and Windows |
 | Claude Desktop (the `Svg` signal, walking animation) | **Not run**; the drawing is only checked as a string |
 | `tool.check` returning `ask` while a permission dialog is open | Assumed from the API docs; stub-tested only |
 | `turn.complete` `reason` values meaning "failed" | **Guess**: `refusal` or anything containing `error` |
@@ -152,7 +166,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 
 ```bash
 npm ci
-npm test            # core checks (node --test) then `claude plugin test`
+npm test            # core checks (node --test, with the strip-types flag) then `claude plugin test`
 claude plugin validate --strict .
 ```
 
