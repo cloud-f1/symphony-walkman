@@ -7,6 +7,10 @@ description: Track and sync this project's work in the Jira project WALK through
 
 This skill is the write side that the Walkman plugin deliberately lacks. The plugin only reads; this skill moves tickets, and only through the symphony-workflow CLI or the Jira REST API. Do not use a Jira MCP server for this project.
 
+## Prerequisite
+
+The `symphony-workflow` CLI comes from the `symphony-workflow-ops` plugin's repo (cloud-f1/symphony-workflow, private). Install that plugin and clone the repo so `symphony-workflow` runs. If the CLI is missing, say so and stop; do not fall back to a Jira MCP server.
+
 ## Rules
 
 - Project key is **WALK**. Every ticket for this repo lives there. Never file it in another project.

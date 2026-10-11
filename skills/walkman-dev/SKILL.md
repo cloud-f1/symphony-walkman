@@ -1,6 +1,9 @@
-# CLAUDE.md
+---
+name: walkman-dev
+description: Contributor rules for the symphony-walkman repo itself (architecture rules, test commands, honesty rules). Use when editing core/, hooks/register.ts, tests or the README of symphony-walkman.
+---
 
-Guidance for Claude Code working in `symphony-walkman` (public repo, MIT).
+
 
 ## What this is
 
