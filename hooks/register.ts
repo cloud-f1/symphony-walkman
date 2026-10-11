@@ -17,7 +17,7 @@ const REFRESH_MS = 3000 // draws can repeat often; reread git / files at most th
 // Session-local state. Resets on reload.
 let pluginOptions: Record<string, unknown> = {}
 const live = new Map<string, { isWorking: boolean; askPending: boolean; lastTurnFailed: boolean; sinceMs: number }>()
-const cache: { at: number; rows: CardRow[]; disk?: Disk } = { at: -Infinity, rows: [] }
+const cache: { at: number; rows: CardRow[]; disk?: Disk; why?: string } = { at: -Infinity, rows: [] }
 
 function option(name: string, fallback: string): string {
   const v = pluginOptions[name]
@@ -63,30 +63,62 @@ async function readDisk($: Engine): Promise<Disk | undefined> {
   }
 }
 
+let inflight: Promise<void> | undefined
+let lastBand = ''
+let renders = 0
+let ticker: { cancel: () => void } | undefined
+const trace: string[] = [] // last few signal events, for /walkman debug
+const note = (line: string) => {
+  trace.push(line)
+  if (trace.length > 12) trace.shift()
+}
+
+// Rereads the cards at most every REFRESH_MS. Overlapping callers share one read, and a read that fails
+// keeps the last good rows: a call can be aborted while the pane is drawing, and an empty board then
+// would say "no card" about a card that is there.
 async function refresh($: Engine): Promise<void> {
   const now = await $.clock.now()
   if (now - cache.at >= 0 && now - cache.at < REFRESH_MS) return
+  if (inflight) return inflight
+  inflight = load($, now).finally(() => {
+    inflight = undefined
+  })
+  return inflight
+}
+
+async function listWorktrees($: Engine): Promise<string | undefined> {
+  const cwd = await $.session.cwd()
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const run = await $.process.run(['git', 'worktree', 'list', '--porcelain'], { cwd, timeoutMs: 2000 })
+      cache.why = `cwd=${cwd} git=${run.exitCode} ${run.stderr.trim().slice(0, 80)}`
+      return run.exitCode === 0 ? run.stdout : undefined
+    } catch (err) {
+      cache.why = 'threw: ' + String(err).slice(0, 80)
+    }
+  }
+  return undefined
+}
+
+async function load($: Engine, now: number): Promise<void> {
+  const out = await listWorktrees($)
+  if (out === undefined) {
+    cache.at = -Infinity // not read: try again on the next draw, and keep the rows we had
+    return
+  }
   cache.at = now
   const rows: CardRow[] = []
-  try {
-    const cwd = await $.session.cwd()
-    const run = await $.process.run(['git', 'worktree', 'list', '--porcelain'], { cwd, timeoutMs: 2000 })
-    if (run.exitCode === 0) {
-      for (const wt of parseWorktrees(run.stdout)) {
-        const card = cardFromBranch(wt.branch, wt.path)
-        if (!card) continue
-        const sig = live.get(wt.path)
-        const runState = await readRunState($, card.key)
-        rows.push({
-          ...card,
-          runState,
-          light: deriveLight({ isWorking: sig?.isWorking ?? false, askPending: sig?.askPending ?? false, lastTurnFailed: sig?.lastTurnFailed ?? false, runState }),
-          sinceMs: sig?.sinceMs ?? now,
-        })
-      }
-    }
-  } catch {
-    // Not a git repo, or git missing: an empty board with the hint, never an error.
+  for (const wt of parseWorktrees(out)) {
+    const card = cardFromBranch(wt.branch, wt.path)
+    if (!card) continue
+    const sig = live.get(wt.path)
+    const runState = await readRunState($, card.key)
+    rows.push({
+      ...card,
+      runState,
+      light: deriveLight({ isWorking: sig?.isWorking ?? false, askPending: sig?.askPending ?? false, lastTurnFailed: sig?.lastTurnFailed ?? false, runState }),
+      sinceMs: sig?.sinceMs ?? now,
+    })
   }
   cache.rows = rows
   cache.disk = await readDisk($)
@@ -100,10 +132,18 @@ async function mark($: Engine, patch: Partial<{ isWorking: boolean; askPending: 
     const path = top.exitCode === 0 ? top.stdout.trim() : cwd
     const prev = live.get(path) ?? { isWorking: false, askPending: false, lastTurnFailed: false, sinceMs: 0 }
     live.set(path, { ...prev, ...patch, sinceMs: await $.clock.now() })
+    note(`mark ${JSON.stringify(patch)} path=${path} cwd=${cwd}`)
     cache.at = -Infinity // a signal changed: reread on the next draw
     $.ui.invalidate('ui.render')
-  } catch {
+    const working = [...live.values()].some((v) => v.isWorking)
+    if (working && !ticker) ticker = $.clock.every(1000, () => $.ui.invalidate('ui.render')) // the clock on a running card ticks
+    if (!working && ticker) {
+      ticker.cancel()
+      ticker = undefined
+    }
+  } catch (err) {
     // A signal is a courtesy; it must never affect the turn or the tool.
+    note(`mark failed ${JSON.stringify(patch)}: ${String(err).slice(0, 100)}`)
   }
 }
 
@@ -112,7 +152,7 @@ export function register(on: On, options?: PluginOptions) {
 
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: 'walkman', description: 'Card board: colored side pane (default), board (print), pane close', argumentHint: 'board|pane|pane close' })
+      await $.command.register({ name: 'walkman', description: 'Card board: colored side pane (default), board (print), pane close', argumentHint: 'board|pane|pane close', immediate: true })
     } catch {
       // A taken command name must not stop the session from starting.
     }
@@ -154,6 +194,10 @@ export function register(on: On, options?: PluginOptions) {
         return false
       }
     }
+    if (sub === 'debug') {
+      await refresh($)
+      return { text: ['Walkman debug', `rows: ${cache.rows.map((r) => r.key + ':' + r.light + '@' + r.worktree).join(', ') || '(none)'}`, `live: ${[...live.entries()].map(([k, v]) => k + '=' + JSON.stringify(v)).join('; ') || '(none)'}`, `read: ${cache.why ?? '(none)'}`, `band renders: ${renders}`, ...trace].join('\n') }
+    }
     if (sub === 'help') return { text: ['Walkman', HELP, plain(LEGEND)].join('\n') }
     if (sub === 'pane' && arg === 'close') {
       try {
@@ -171,7 +215,7 @@ export function register(on: On, options?: PluginOptions) {
     await refresh($)
     // The host puts "<plugin>:" in front of the first line, so a header line keeps the rows aligned.
     const lines = renderBoard(cache.rows, cache.disk, await $.clock.now())
-    return { text: ['Walkman board', ...lines, '', plain(LEGEND)].join('\n') }
+    return { text: ['Walkman board', ...lines, ...(cache.rows.length === 0 && cache.why ? ['(no card: ' + cache.why + ')'] : []), '', plain(LEGEND)].join('\n') }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
@@ -186,6 +230,10 @@ export function register(on: On, options?: PluginOptions) {
     await refresh($)
     if (cache.rows.length === 0) return next(e) // not in a card worktree: draw nothing of our own
     const now = await $.clock.now()
+    renders++
+    const sig = cache.rows.map((r) => r.key + ':' + r.light).join(',')
+    if (sig !== lastBand) note(`band render ${sig}`)
+    lastBand = sig
     const lead = cache.rows.find((r) => r.light === 'failed' || r.light === 'waiting') ?? cache.rows.find((r) => r.light === 'walking') ?? cache.rows[0]
     const elements = $.ui.resolve(e) as Record<string, unknown>
     if (e.surface === 'desktop' && lead && elements['Svg']) {

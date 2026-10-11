@@ -24,6 +24,8 @@ export const HELP = '/walkman: colored side pane · /walkman board: print it · 
 export const plain = (line: Line): string => line.map((s) => s.text).join('')
 
 const stateText = (r: CardRow): string => r.runState ?? LABEL[r.light]
+// An idle card has no running clock; showing 0:00 there reads as a bug.
+const elapsed = (r: CardRow, now: number): string => (r.light === 'idle' ? '' : ' ' + formatElapsed(now - r.sinceMs))
 const glyph = (r: CardRow): Seg => ({ text: GLYPH[r.light], tone: TONE[r.light], bold: true })
 
 // Run progress for symphony-workflow's states, drawn like the status line bars: filled blocks then dots.
@@ -42,7 +44,7 @@ export function styleBand(rows: readonly CardRow[], now: number): Line {
     glyph(lead),
     { text: ' ' + lead.key, bold: true },
     { text: ' ' + LABEL[lead.light], tone: TONE[lead.light], bold: lead.light === 'waiting' || lead.light === 'failed' },
-    { text: ' ' + formatElapsed(now - lead.sinceMs), tone: 'subtle' },
+    { text: elapsed(lead, now), tone: 'subtle' },
   ]
   if (rows.length > 1) line.push({ text: `  (+${rows.length - 1})`, tone: 'subtle' })
   return line
@@ -77,7 +79,7 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
       glyph(r),
       { text: ' ' + r.key, bold: true },
       { text: ' ' + stateText(r), tone: TONE[r.light], bold: r.light === 'waiting' || r.light === 'failed' },
-      { text: ' ' + formatElapsed(now - r.sinceMs), tone: 'subtle' },
+      { text: elapsed(r, now), tone: 'subtle' },
     ])
     const detail: Line = [{ text: '   ' + (r.slug === '' ? r.branch : r.slug), tone: 'subtle' }]
     if (bar !== '') detail.push({ text: ' ' + bar, tone: TONE[r.light] })
@@ -94,7 +96,7 @@ export function styleBoard(rows: readonly CardRow[], disk: Disk | undefined, now
     { text: ' ' + r.key.padEnd(9), bold: true },
     { text: ' ' + (r.slug === '' ? '' : r.slug.slice(0, 28)).padEnd(28), tone: 'subtle' as const },
     { text: ' ' + stateText(r).padEnd(13), tone: TONE[r.light] },
-    { text: ' ' + formatElapsed(now - r.sinceMs), tone: 'subtle' as const },
+    { text: elapsed(r, now), tone: 'subtle' as const },
   ])
   if (rows.length === 0) lines.push([{ text: 'No card branch found. Work in a KEY-<n>-<slug> branch to light a card.', tone: 'subtle' }])
   lines.push([], ...footer(rows, disk))

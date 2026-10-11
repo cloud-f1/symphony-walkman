@@ -6,12 +6,13 @@ const PORCELAIN =
   'worktree /r/.claude/worktrees/a\nHEAD def\nbranch refs/heads/CF1-195-devopsday-visuals\n'
 const DF = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/d 488245288 400000000 77594624 84% /\n'
 
-interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean }
+interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number }
 
 function stubs(on: any, setup: Setup = {}) {
   const files = setup.files ?? {}
   const registered: string[] = []
   const panes: string[] = []
+  let worktreeCalls = 0
   mock.clock(on)
   on('env.get', (_: any, e: any) => ({ value: e.name === 'HOME' ? '/home/u' : undefined }))
   on('session.cwd', () => ({ value: CWD }))
@@ -22,6 +23,7 @@ function stubs(on: any, setup: Setup = {}) {
   })
   on('process.run', (_: any, e: any) => {
     const [cmd, a, b] = e.argv
+    if (cmd === 'git' && a === 'worktree' && ++worktreeCalls > (setup.worktreeOkCalls ?? Infinity)) throw new Error('aborted')
     if (cmd === 'git' && a === 'worktree') return { value: { exitCode: 0, stdout: setup.porcelain ?? PORCELAIN, stderr: '' } }
     if (cmd === 'git' && a === 'rev-parse' && b === '--show-toplevel') return { value: { exitCode: 0, stdout: CWD + '\n', stderr: '' } }
     if (cmd === 'df') return { value: { exitCode: 0, stdout: DF, stderr: '' } }
@@ -103,6 +105,23 @@ test('the pane and the band are drawn in theme colors', async ($, on) => {
   expect(flat(pane)).toContain('CF1-195')
   const band: any = await ($ as any).ui.render({ surface: 'terminal', component: 'AbovePrompt', props: {} })
   expect(flat(band)).toContain('"color":"success"')
+})
+
+test('a git read that fails keeps the last good rows instead of saying "no card"', async ($, on) => {
+  stubs(on, { worktreeOkCalls: 1 })
+  expect((await walkman($, 'board')).text).toContain('CF1-195')
+  await $.turn.start({ text: 'go', turnId: 't1' }) // a signal forces a reread, which now fails
+  const again = (await walkman($, 'board')).text
+  expect(again).toContain('CF1-195')
+  expect(again).not.toContain('No card branch found')
+})
+
+test('debug prints the signal state', async ($, on) => {
+  stubs(on)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const out = (await walkman($, 'debug')).text
+  expect(out).toContain('Walkman debug')
+  expect(out).toContain('CF1-195')
 })
 
 test('pane opens and closes', async ($, on) => {

@@ -1,6 +1,6 @@
 import type { CardRow, Disk, Light } from './contracts.ts'
 
-const GLYPH: Record<Light, string> = { walking: '🟢', waiting: '🔴', failed: '🔴', done: '✓ ', idle: '· ' }
+const GLYPH: Record<Light, string> = { walking: '🟢', waiting: '🔴', failed: '🔴', done: '✓ ', idle: '○ ' }
 const LABEL: Record<Light, string> = { walking: 'running', waiting: 'needs you', failed: 'failed', done: 'done', idle: 'idle' }
 
 export function formatElapsed(ms: number): string {
@@ -31,7 +31,7 @@ export function renderBoard(rows: readonly CardRow[], disk: Disk | undefined, no
   const lines = rows.map((r) => {
     const slug = r.slug === '' ? '' : r.slug.slice(0, 28)
     const state = r.runState ?? LABEL[r.light]
-    return `${GLYPH[r.light]} ${r.key.padEnd(9)} ${slug.padEnd(28)} ${state.padEnd(13)} ${formatElapsed(now - r.sinceMs)}`
+    return `${GLYPH[r.light]} ${r.key.padEnd(9)} ${slug.padEnd(28)} ${state.padEnd(13)} ${r.light === 'idle' ? '' : formatElapsed(now - r.sinceMs)}`
   })
   if (rows.length === 0) lines.push('No card branch found. Work in a CF1-<n>-<slug> branch to light a card.')
   if (disk) lines.push('', `disk · ${disk.freeGb} GB free · ${disk.usedPct}% used`)
