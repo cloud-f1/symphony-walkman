@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -109,4 +109,13 @@ test('card creates the worktree and branch for a Jira key', () => {
   assert.match(sh(dir, 'branch', '--list', 'JEV-47-withhold-secrets').stdout, /JEV-47-withhold-secrets/)
   const bad = spawnSync('node', [CLI, 'card', 'nope', '--repo', dir], { encoding: 'utf8' })
   assert.equal(bad.status, 1)
+})
+
+test('the CLI runs when started through a symlink (how npx and npm link start it)', () => {
+  const dir = tmp()
+  const link = join(dir, 'symphony-walkman')
+  symlinkSync(CLI, link)
+  const r = spawnSync('node', [link, 'help'], { encoding: 'utf8' })
+  assert.equal(r.status, 0)
+  assert.match(r.stdout, /symphony-walkman setup CLI/)
 })
