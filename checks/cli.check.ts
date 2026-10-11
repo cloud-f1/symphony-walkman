@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 // @ts-ignore the CLI is plain ESM JavaScript
-import { atLeast, branchFor, inferProject, lookupJql, mergeEnvSetting, missingEnv, parseEnvNames, planSetup, pluginInstalled, slugify, worktreeDirFor, writeSetting } from '../cli/walkman.mjs'
+import { SW_GIT, atLeast, branchFor, inferProject, lookupJql, mergeEnvSetting, missingEnv, parseEnvNames, planSetup, pluginInstalled, searchCommand, slugify, worktreeDirFor, writeSetting } from '../cli/walkman.mjs'
 
 const CLI = new URL('../cli/walkman.mjs', import.meta.url).pathname
 const sh = (cwd: string, ...args: string[]) => spawnSync('git', args, { cwd, encoding: 'utf8' })
@@ -68,17 +68,34 @@ test('version compare, plugin list match, and a JQL that rejects a bad project',
 })
 
 test('the setup plan lists only what is missing, in order, and never asks for a token', () => {
-  const base = { repo: '/r', claude: true, swPluginInstalled: false, swDir: '', swDest: '/h/symphony-workflow', envFilled: false, project: 'JEV', projectSetting: '', dirSetting: '' }
-  assert.deepEqual(planSetup(base).map((s: { id: string }) => s.id), ['plugin', 'clone', 'env', 'project', 'dir'])
-  const done = { ...base, swPluginInstalled: true, swDir: '/h/sw', envFilled: true, projectSetting: 'JEV', dirSetting: '/h/sw' }
+  const base = { repo: '/r', claude: true, walkmanInstalled: false, swPluginInstalled: false, uv: true, uvxWarm: false, envFile: '/c/.env', envFilled: false, migrateFrom: '', project: 'JEV', projectSetting: '' }
+  assert.deepEqual(planSetup(base).map((st: { id: string }) => st.id), ['plugin', 'env', 'warm', 'project'])
+  assert.deepEqual(planSetup({ ...base, migrateFrom: '/old/clone' }).map((st: { id: string }) => st.id), ['plugin', 'migrate', 'warm', 'project'])
+  // walkman is installed but the skills plugin is not: only the skills plugin step
+  const plugin = planSetup({ ...base, walkmanInstalled: true }).find((st: { id: string }) => st.id === 'plugin')
+  assert.ok(JSON.stringify(plugin.run).includes('symphony-workflow-ops@symphony-walkman'))
+  const done = { ...base, walkmanInstalled: true, swPluginInstalled: true, uvxWarm: true, envFilled: true, projectSetting: 'JEV' }
   assert.deepEqual(planSetup(done), [])
-  const plan = JSON.stringify(planSetup(base))
-  assert.ok(!/TOKEN|password|secret/i.test(plan.replace(/JIRA_API_TOKEN/g, '')))
+  const text = JSON.stringify(planSetup(base))
+  assert.ok(!/password|secret/i.test(text))
+  assert.ok(!text.includes('git clone'), 'no clone step any more')
+})
+
+test('the lookup runs the released CLI through uvx, or the older clone when one is configured', () => {
+  const [cmd, args] = searchCommand({ envFile: '/c/.env', legacyDir: '' }, 'project = JEV')
+  assert.equal(cmd, 'uvx')
+  assert.deepEqual(args.slice(0, 4), ['--env-file', '/c/.env', '--from', SW_GIT])
+  assert.equal(args[args.length - 2], 'search')
+  const [cmd2, args2, cwd2] = searchCommand({ envFile: '/c/.env', legacyDir: '/clone' }, 'project = JEV')
+  assert.equal(cmd2, 'uv')
+  assert.equal(cwd2, '/clone')
+  assert.ok(args2.includes('.env'))
+  for (const a of [args, args2]) assert.ok(!a.some((x: string) => /transition|comment|create|rollup|add-subtasks/.test(x)))
 })
 
 test('doctor --json on a scratch repo infers the project and flags what is missing', () => {
   const dir = repoWith(['JEV-1 start', 'JEV-2 more', 'chore'])
-  const r = spawnSync('node', [CLI, 'doctor', '--json', '--repo', dir, '--sw-dir', join(dir, 'nope')], { encoding: 'utf8' })
+  const r = spawnSync('node', [CLI, 'doctor', '--json', '--repo', dir, '--creds', join(dir, 'nope.env')], { encoding: 'utf8' })
   const list = JSON.parse(r.stdout) as { level: string; text: string }[]
   assert.ok(list.some((c) => c.text.startsWith('git repo')))
   assert.ok(list.some((c) => c.text.includes('git history suggests JEV')))
@@ -86,7 +103,7 @@ test('doctor --json on a scratch repo infers the project and flags what is missi
 
 test('setup --dry-run prints a plan and changes nothing', () => {
   const dir = repoWith(['JEV-1 a', 'JEV-2 b'])
-  const r = spawnSync('node', [CLI, 'setup', '--dry-run', '--repo', dir, '--sw-dir', join(dir, 'nope')], { encoding: 'utf8' })
+  const r = spawnSync('node', [CLI, 'setup', '--dry-run', '--repo', dir, '--creds', join(dir, 'nope.env')], { encoding: 'utf8' })
   assert.match(r.stdout, /Setup plan:/)
   assert.match(r.stdout, /WALKMAN_JIRA_PROJECT=JEV/)
   assert.ok(!existsSync(join(dir, '.claude', 'settings.json')))
@@ -94,7 +111,7 @@ test('setup --dry-run prints a plan and changes nothing', () => {
 
 test('setup without a terminal and without --yes applies nothing', () => {
   const dir = repoWith(['JEV-1 a', 'JEV-2 b'])
-  const r = spawnSync('node', [CLI, 'setup', '--repo', dir, '--sw-dir', join(dir, 'nope')], { encoding: 'utf8', input: '' })
+  const r = spawnSync('node', [CLI, 'setup', '--repo', dir, '--creds', join(dir, 'nope.env')], { encoding: 'utf8', input: '' })
   assert.equal(r.status, 2)
   assert.match(r.stdout, /nothing changed/i)
   assert.ok(!existsSync(join(dir, '.claude')))
@@ -103,7 +120,7 @@ test('setup without a terminal and without --yes applies nothing', () => {
 test('card creates the worktree and branch for a Jira key', () => {
   const dir = repoWith(['init'])
   mkdirSync(join(dir, '.claude'), { recursive: true })
-  const r = spawnSync('node', [CLI, 'card', 'JEV-47', 'withhold secrets', '--repo', dir, '--sw-dir', join(dir, 'nope')], { encoding: 'utf8' })
+  const r = spawnSync('node', [CLI, 'card', 'JEV-47', 'withhold secrets', '--repo', dir, '--creds', join(dir, 'nope.env')], { encoding: 'utf8' })
   assert.equal(r.status, 0, r.stderr + r.stdout)
   assert.ok(existsSync(join(dir, '.claude', 'worktrees', 'jev-47-withhold-secrets')))
   assert.match(sh(dir, 'branch', '--list', 'JEV-47-withhold-secrets').stdout, /JEV-47-withhold-secrets/)

@@ -15,6 +15,9 @@ import type { CardRow, Disk, RunState } from '../core/contracts.ts'
 
 const PANE_ID = 'walkman-pane'
 const SETUP_COMMAND = 'npx --yes github:cloud-f1/symphony-walkman setup'
+// The symphony-workflow release the Jira lookup runs with `uvx` when no clone is configured. Bump with it.
+const SW_GIT = 'git+https://github.com/cloud-f1/symphony-workflow@v0.5.2'
+const DEFAULT_ENV_FILE = '~/.config/symphony-workflow/.env'
 const REFRESH_MS = 3000 // draws can repeat often; reread git / files at most this often
 
 // Session-local state. Resets on reload.
@@ -76,14 +79,15 @@ const jira: { at: number; keys: string; issues: JiraIssue[]; error?: string; inf
 
 // The project is per repo, so WALKMAN_JIRA_PROJECT (set in the repo's .claude/settings.json env) wins over the
 // plugin setting; the symphony-workflow folder is per person, so the setting is the usual place for it.
-async function jiraSettings($: Engine): Promise<{ project: string; dir: string }> {
+async function jiraSettings($: Engine): Promise<{ project: string; dir: string; envFile: string }> {
   const project = ((await $.env.get('WALKMAN_JIRA_PROJECT')) || option('jira_project', '')).trim()
   const dir = await expandHome($, (await $.env.get('WALKMAN_SYMPHONY_WORKFLOW_DIR')) || option('symphony_workflow_dir', ''))
-  return { project, dir }
+  const envFile = await expandHome($, (await $.env.get('WALKMAN_JIRA_ENV_FILE')) || option('jira_env_file', '') || DEFAULT_ENV_FILE)
+  return { project, dir, envFile }
 }
 
 async function fetchJira($: Engine, keys: string[]): Promise<void> {
-  let settings: { project: string; dir: string }
+  let settings: { project: string; dir: string; envFile: string }
   try {
     settings = await jiraSettings($)
   } catch (err) {
@@ -91,31 +95,42 @@ async function fetchJira($: Engine, keys: string[]): Promise<void> {
     jira.at = Date.now()
     return
   }
-  const { project, dir } = settings
+  const { project, dir, envFile } = settings
   const jql = buildJql(project, keys)
-  if (jql === undefined || dir === '') {
+  if (jql === undefined) {
     jira.issues = []
-    jira.error = project === '' ? undefined : 'jira_project or symphony_workflow_dir is not valid'
+    jira.error = project === '' ? undefined : 'jira_project is not a valid project key'
     return
   }
   try {
     // Fixed arguments; the only variable part is the JQL built from validated pieces. A search never writes.
-    const run = await $.process.run(['uv', 'run', '--env-file', '.env', 'symphony-workflow', 'search', jql], { cwd: dir, timeoutMs: 20000 })
-    if (run.exitCode === 0) {
-      jira.issues = parseSearch(run.stdout)
-      jira.error = undefined
+    // With a symphony-workflow clone configured, run it there (the older way); otherwise run the released
+    // CLI through uvx with the credentials file, so no clone or `uv sync` is needed.
+    let run: { exitCode: number; stdout: string; stderr: string } | undefined
+    if (dir !== '') {
+      run = await $.process.run(['uv', 'run', '--env-file', '.env', 'symphony-workflow', 'search', jql], { cwd: dir, timeoutMs: 20000 })
+    } else if (envFile === '' || !(await $.fs.exists(envFile))) {
+      jira.error = `no credentials file at ${envFile || DEFAULT_ENV_FILE}; run: ${SETUP_COMMAND}`
     } else {
-      jira.error = `exit ${run.exitCode}: ${(run.stderr || run.stdout).trim().slice(0, 100)}`
+      run = await $.process.run(['uvx', '--env-file', envFile, '--from', SW_GIT, 'symphony-workflow', 'search', jql], { timeoutMs: 90000 })
+    }
+    if (run) {
+      if (run.exitCode === 0) {
+        jira.issues = parseSearch(run.stdout)
+        jira.error = undefined
+      } else {
+        jira.error = `exit ${run.exitCode}: ${(run.stderr || run.stdout).trim().slice(0, 100)}`
+      }
     }
   } catch (err) {
     jira.error = 'threw: ' + String(err).slice(0, 100)
   }
-  jira.keys = keys.join(',')
-  jira.at = await $.clock.now()
   try {
+    jira.keys = keys.join(',')
+    jira.at = await $.clock.now()
     $.ui.invalidate('ui.render')
   } catch {
-    // a redraw is a courtesy
+    // a redraw is a courtesy; a late rejection after the session is gone must not escape
   }
 }
 
@@ -124,7 +139,7 @@ function ensureJira($: Engine, now: number, keys: string[]): Promise<void> | und
   if (jira.inflight) return jira.inflight
   const due = jira.keys !== keys.join(',') || now - jira.at >= (jira.error ? JIRA_RETRY_MS : JIRA_MS)
   if (!due) return undefined
-  jira.inflight = fetchJira($, keys).finally(() => {
+  jira.inflight = fetchJira($, keys).catch(() => undefined).finally(() => {
     jira.inflight = undefined
   })
   return jira.inflight
@@ -296,12 +311,16 @@ export function register(on: On, options?: PluginOptions) {
       // /walkman with no room for a pane: fall through to the printed board.
     }
     await refresh($)
-    if (jira.at === -Infinity) await ensureJira($, await $.clock.now(), cache.rows.map((r) => r.key)) // first board: wait once so titles show
+    if (jira.at === -Infinity) {
+      // first board: wait for the lookup so titles show, but never more than a few seconds (a cold uvx download is slow)
+      const first = ensureJira($, await $.clock.now(), cache.rows.map((r) => r.key))
+      if (first) await Promise.race([first, new Promise<void>((resolve) => $.clock.after(8000, () => resolve()))])
+    }
     // The host puts "<plugin>:" in front of the first line, so a header line keeps the rows aligned.
     const v = view()
     const lines = renderBoard(v.rows, cache.disk, await $.clock.now(), v.others)
     const linked = (await jiraSettings($).catch(() => ({ project: '', dir: '' }))).project !== ''
-    return { text: ['Walkman board', ...lines, ...(cache.rows.length === 0 && cache.why && !/ git=0\b/.test(cache.why) ? ['(could not read git: ' + cache.why + ')'] : []), ...(jira.error ? ['(jira lookup: ' + jira.error + ')'] : []), ...(linked ? [] : ['', 'Not linked to Jira. Set WALKMAN_JIRA_PROJECT, or run: ' + SETUP_COMMAND]), '', plain(LEGEND)].join('\n') }
+    return { text: ['Walkman board', ...lines, ...(cache.rows.length === 0 && cache.why && !/ git=0\b/.test(cache.why) ? ['(could not read git: ' + cache.why + ')'] : []), ...(jira.error ? ['(jira lookup: ' + jira.error + ')'] : jira.inflight ? ['(jira lookup still running; run /walkman again in a moment)'] : []), ...(linked ? [] : ['', 'Not linked to Jira. Set WALKMAN_JIRA_PROJECT, or run: ' + SETUP_COMMAND]), '', plain(LEGEND)].join('\n') }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {

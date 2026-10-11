@@ -1,12 +1,26 @@
 {
   "name": "symphony-walkman",
   "description": "Symphony Walkman: which card is Claude working on, as a pedestrian signal.",
-  "owner": { "name": "cloud-f1" },
+  "owner": {
+    "name": "cloud-f1"
+  },
   "plugins": [
     {
       "name": "symphony-walkman",
       "source": "./",
-      "description": "Pedestrian-signal board for the Jira card Claude is working on."
+      "description": "Pedestrian-signal board for the Jira card Claude is working on.",
+      "dependencies": [
+        "symphony-workflow-ops"
+      ]
+    },
+    {
+      "name": "symphony-workflow-ops",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/cloud-f1/symphony-workflow.git",
+        "path": "plugin"
+      },
+      "description": "Skills for Jira ticket work with the symphony-workflow CLI (published from cloud-f1/symphony-workflow)."
     }
   ]
 }

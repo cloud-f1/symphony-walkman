@@ -10,9 +10,11 @@ import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 
-export const SW_REPO = 'https://github.com/cloud-f1/symphony-workflow'
-export const SW_MARKETPLACE = 'cloud-f1/symphony-workflow'
-export const SW_PLUGIN = 'symphony-workflow-ops@symphony-workflow-marketplace'
+export const SW_GIT = 'git+https://github.com/cloud-f1/symphony-workflow@v0.5.2' // bump with symphony-workflow releases
+export const WALKMAN_MARKETPLACE = 'cloud-f1/symphony-walkman'
+export const WALKMAN_PLUGIN = 'symphony-walkman@symphony-walkman' // its marketplace also lists symphony-workflow-ops, so one install pulls both
+export const SW_PLUGIN = 'symphony-workflow-ops@symphony-walkman'
+export const DEFAULT_ENV_FILE = join(homedir(), '.config', 'symphony-workflow', '.env')
 export const REQUIRED_ENV = ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_TOKEN']
 const PROJECT = /^[A-Z][A-Z0-9]{1,9}$/
 const KEY = /^[A-Z][A-Z0-9]{1,9}-\d+$/
@@ -89,14 +91,17 @@ export function parseSearch(out) {
 // What `setup` would do, in order, from what `doctor` found. Pure: the executor runs it.
 export function planSetup(s) {
   const steps = []
-  if (s.claude && !s.swPluginInstalled) {
-    steps.push({ id: 'plugin', title: 'Install the symphony-workflow plugin (skills for ticket work)', run: [['claude', ['plugin', 'marketplace', 'add', SW_MARKETPLACE]], ['claude', ['plugin', 'install', SW_PLUGIN]]] })
+  if (s.claude && !s.walkmanInstalled) {
+    steps.push({ id: 'plugin', title: 'Install the symphony-walkman plugin (its marketplace also installs the symphony-workflow-ops skills)', run: [['claude', ['plugin', 'marketplace', 'add', WALKMAN_MARKETPLACE]], ['claude', ['plugin', 'install', WALKMAN_PLUGIN]]] })
+  } else if (s.claude && !s.swPluginInstalled) {
+    steps.push({ id: 'plugin', title: 'Install the symphony-workflow-ops skills plugin', run: [['claude', ['plugin', 'marketplace', 'update', 'symphony-walkman']], ['claude', ['plugin', 'install', SW_PLUGIN]]] })
   }
-  if (!s.swDir) steps.push({ id: 'clone', title: `Clone symphony-workflow to ${s.swDest} and install it`, run: [['git', ['clone', SW_REPO, s.swDest]], ['uv', ['sync'], s.swDest]] })
-  if ((s.swDir || s.swDest) && !s.envFilled) steps.push({ id: 'env', title: 'Prepare the .env for Jira credentials (you fill in the values)', manual: true })
+  if (!s.envFilled) {
+    if (s.migrateFrom) steps.push({ id: 'migrate', title: `Copy the Jira credentials from ${s.migrateFrom}/.env to ${s.envFile} (mode 600; values are not shown)` })
+    else steps.push({ id: 'env', title: `Create ${s.envFile} (mode 600) for the Jira credentials (you fill in the values)`, manual: true })
+  }
+  if (s.uv && !s.uvxWarm) steps.push({ id: 'warm', title: 'Download the symphony-workflow CLI once (about 95 MB) so lookups are fast', run: [['uvx', ['--from', SW_GIT, 'symphony-workflow', '--help']]] })
   if (s.project && s.projectSetting !== s.project) steps.push({ id: 'project', title: `Set WALKMAN_JIRA_PROJECT=${s.project} in ${s.repo}/.claude/settings.json`, write: { file: join(s.repo, '.claude', 'settings.json'), name: 'WALKMAN_JIRA_PROJECT', value: s.project } })
-  const dir = s.swDir || s.swDest
-  if (dir && s.dirSetting !== dir) steps.push({ id: 'dir', title: `Set WALKMAN_SYMPHONY_WORKFLOW_DIR=${dir} in ${s.repo}/.claude/settings.local.json (personal, not committed)`, write: { file: join(s.repo, '.claude', 'settings.local.json'), name: 'WALKMAN_SYMPHONY_WORKFLOW_DIR', value: dir } })
   return steps
 }
 
@@ -150,35 +155,49 @@ function gather(repo, flags) {
   const root = git.ok ? git.out.trim() : ''
   const claude = run('claude', ['--version'])
   const list = claude.ok ? run('claude', ['plugin', 'list']).out : ''
-  const swDir = findSwClone(repo, flags['sw-dir'])
-  const envText = swDir && existsSync(join(swDir, '.env')) ? readFileSync(join(swDir, '.env'), 'utf8') : ''
-  const names = parseEnvNames(envText)
+  const legacyDir = flags['sw-dir'] ? resolve(flags['sw-dir']) : (settingOf(repo, 'WALKMAN_SYMPHONY_WORKFLOW_DIR') ? resolve(settingOf(repo, 'WALKMAN_SYMPHONY_WORKFLOW_DIR')) : '')
+  const envFile = resolve(flags.creds || settingOf(repo, 'WALKMAN_JIRA_ENV_FILE') || DEFAULT_ENV_FILE)
+  const textOf = (f) => (existsSync(f) ? readFileSync(f, 'utf8') : '')
+  const names = parseEnvNames(legacyDir ? textOf(join(legacyDir, '.env')) : textOf(envFile))
+  const clone = legacyDir || findSwClone(repo, '')
+  const cloneFilled = clone && missingEnv(parseEnvNames(textOf(join(clone, '.env')))).length === 0
   const texts = []
   if (root) {
     texts.push(...run('git', ['log', '-n', '200', '--format=%s'], { cwd: root }).out.split('\n'))
     texts.push(...run('git', ['branch', '-a', '--format=%(refname:short)'], { cwd: root }).out.split('\n'))
   }
   const worktrees = root ? run('git', ['worktree', 'list', '--porcelain'], { cwd: root }).out : ''
+  const uv = !run('uv', ['--version']).missing
+  const credsPresent = Object.keys(names).length > 0
   return {
     repo, root, isRepo: git.ok,
     node: process.versions.node,
     claude: claude.ok, claudeVersion: claude.ok ? claude.out.trim().split(/\s+/)[0] : '',
     walkmanInstalled: pluginInstalled(list, 'symphony-walkman'),
     swPluginInstalled: pluginInstalled(list, 'symphony-workflow-ops'),
-    uv: !run('uv', ['--version']).missing,
-    swDir, swDest: flags['sw-dir'] ? resolve(flags['sw-dir']) : join(homedir(), 'symphony-workflow'),
-    envExists: Boolean(envText), envMissing: envText ? missingEnv(names) : REQUIRED_ENV, envFilled: Boolean(envText) && missingEnv(names).length === 0,
-    projectSetting: settingOf(repo, 'WALKMAN_JIRA_PROJECT'), dirSetting: settingOf(repo, 'WALKMAN_SYMPHONY_WORKFLOW_DIR'),
+    uv, // cached runs answer in about 2s; a cold download is much slower, so a short timeout tells them apart
+    uvxWarm: uv && run('uvx', ['--from', SW_GIT, 'symphony-workflow', '--help'], { timeout: 12000 }).ok,
+    legacyDir, envFile, credsPresent,
+    envMissing: credsPresent ? missingEnv(names) : REQUIRED_ENV, envFilled: credsPresent && missingEnv(names).length === 0,
+    migrateFrom: !legacyDir && !existsSync(envFile) && cloneFilled ? clone : '',
+    projectSetting: settingOf(repo, 'WALKMAN_JIRA_PROJECT'),
     inferred: inferProject(texts),
     project: flags.project || settingOf(repo, 'WALKMAN_JIRA_PROJECT') || inferProject(texts)?.project || '',
     cardBranches: [...worktrees.matchAll(/^branch refs\/heads\/([A-Z][A-Z0-9]+-\d+\S*)$/gm)].map((m) => m[1]),
   }
 }
 
-function lookup(swDir, project) {
+// The read-only search, either from a clone you configured (the older way) or the released CLI through uvx.
+export function searchCommand(s, jql) {
+  if (s.legacyDir) return ['uv', ['run', '--env-file', '.env', 'symphony-workflow', 'search', jql], s.legacyDir]
+  return ['uvx', ['--env-file', s.envFile, '--from', SW_GIT, 'symphony-workflow', 'search', jql]]
+}
+
+function lookup(s, project) {
   const jql = lookupJql(project)
-  if (!jql || !swDir) return { ok: false, text: 'not configured' }
-  const r = run('uv', ['run', '--env-file', '.env', 'symphony-workflow', 'search', jql], { cwd: swDir, timeout: 30000 })
+  if (!jql || !s.envFilled) return { ok: false, text: 'not configured' }
+  const [cmd, args, cwd] = searchCommand(s, jql)
+  const r = run(cmd, args, { cwd, timeout: 120000 })
   if (!r.ok) return { ok: false, text: (r.err || r.out).trim().split('\n')[0].slice(0, 160) }
   return { ok: true, issues: parseSearch(r.out) }
 }
@@ -196,12 +215,11 @@ export function checks(s, withLookup) {
   add(s.walkmanInstalled ? 'ok' : 'warn', s.walkmanInstalled ? 'symphony-walkman plugin installed' : 'symphony-walkman plugin not installed (fine if you load it with --plugin-dir)', 'claude plugin marketplace add cloud-f1/symphony-walkman && claude plugin install symphony-walkman@symphony-walkman')
   add(s.swPluginInstalled ? 'ok' : 'warn', s.swPluginInstalled ? 'symphony-workflow-ops plugin installed' : 'symphony-workflow-ops plugin not installed', 'run: npx --yes github:cloud-f1/symphony-walkman setup')
   add(s.uv ? 'ok' : 'bad', s.uv ? 'uv installed' : 'uv not found', 'install uv: https://docs.astral.sh/uv/')
-  add(s.swDir ? 'ok' : 'warn', s.swDir ? `symphony-workflow clone: ${s.swDir}` : 'symphony-workflow clone not found', 'run: npx --yes github:cloud-f1/symphony-walkman setup')
-  if (s.swDir) add(s.envFilled ? 'ok' : 'bad', s.envFilled ? 'symphony-workflow .env has the Jira variables (values not shown)' : `symphony-workflow .env is missing: ${s.envMissing.join(', ')}`, `fill them in ${join(s.swDir, '.env')} (an Atlassian API token: https://id.atlassian.com/manage-profile/security/api-tokens)`)
+  add(s.envFilled ? 'ok' : 'warn', s.envFilled ? `Jira credentials file: ${s.legacyDir ? join(s.legacyDir, '.env') : s.envFile} (values not shown)` : s.credsPresent ? `Jira credentials file ${s.envFile} is missing: ${s.envMissing.join(', ')}` : `no Jira credentials file at ${s.envFile}${s.migrateFrom ? ` (setup can copy them from ${s.migrateFrom}/.env)` : ''}`, `run: npx --yes github:cloud-f1/symphony-walkman setup (an Atlassian API token: https://id.atlassian.com/manage-profile/security/api-tokens)`)
+  if (!s.legacyDir) add(s.uvxWarm ? 'ok' : 'warn', s.uvxWarm ? 'symphony-workflow CLI is cached for uvx' : 'symphony-workflow CLI not downloaded yet (the first lookup will be slow)', 'run: npx --yes github:cloud-f1/symphony-walkman setup')
   add(s.projectSetting ? 'ok' : 'warn', s.projectSetting ? `WALKMAN_JIRA_PROJECT=${s.projectSetting}` : `WALKMAN_JIRA_PROJECT is not set${s.inferred ? ` (git history suggests ${s.inferred.project}, ${s.inferred.count} mentions)` : ''}`, 'run: npx --yes github:cloud-f1/symphony-walkman setup')
-  add(s.dirSetting ? 'ok' : 'warn', s.dirSetting ? `WALKMAN_SYMPHONY_WORKFLOW_DIR=${s.dirSetting}` : 'WALKMAN_SYMPHONY_WORKFLOW_DIR is not set (or set the plugin setting symphony_workflow_dir)', 'run: npx --yes github:cloud-f1/symphony-walkman setup')
-  if (withLookup && s.swDir && s.envFilled && s.project) {
-    const l = lookup(s.swDir, s.project)
+  if (withLookup && s.envFilled && s.project) {
+    const l = lookup(s, s.project)
     add(l.ok ? 'ok' : 'bad', l.ok ? `Jira lookup works: ${l.issues.length} In Progress Stories in ${s.project}${l.issues[0] ? ` (e.g. ${l.issues[0].key} ${l.issues[0].summary.slice(0, 40)})` : ''}` : `Jira lookup failed: ${l.text}`, 'check the .env values and that the project key exists')
   }
   add(s.cardBranches.length > 0 ? 'ok' : 'warn', s.cardBranches.length > 0 ? `card worktrees: ${s.cardBranches.join(', ')}` : 'no card worktrees (a green light needs a worktree named KEY-n-slug)', s.project ? `walkman card ${s.project}-<n>` : 'walkman card KEY-<n>')
@@ -263,15 +281,19 @@ async function cmdSetup(flags) {
       writeSetting(st.write.file, st.write.name, st.write.value)
       console.log(`  ✓ wrote ${st.write.file}`)
     }
+    if (st.id === 'migrate') {
+      mkdirSync(dirname(s.envFile), { recursive: true })
+      copyFileSync(join(s.migrateFrom, '.env'), s.envFile)
+      chmodSync(s.envFile, 0o600)
+      console.log(`  ✓ copied to ${s.envFile} (mode 600)`)
+    }
     if (st.id === 'env') {
-      const dir = s.swDir || s.swDest
-      const target = join(dir, '.env')
-      if (!existsSync(target) && existsSync(join(dir, '.env.example'))) {
-        copyFileSync(join(dir, '.env.example'), target)
-        chmodSync(target, 0o600)
-        console.log(`  ✓ created ${target} from .env.example (mode 600)`)
+      mkdirSync(dirname(s.envFile), { recursive: true })
+      if (!existsSync(s.envFile)) {
+        writeFileSync(s.envFile, 'JIRA_BASE_URL=https://your-site.atlassian.net\nJIRA_EMAIL=\nJIRA_API_TOKEN=\n', { mode: 0o600 })
+        console.log(`  ✓ created ${s.envFile} (mode 600)`)
       }
-      console.log(`  Fill in ${REQUIRED_ENV.join(', ')} in ${target}, then run: npx --yes github:cloud-f1/symphony-walkman doctor`)
+      console.log(`  Fill in ${REQUIRED_ENV.join(', ')} in ${s.envFile}, then run: npx --yes github:cloud-f1/symphony-walkman doctor`)
       console.log('  I do not ask for or print the token. Create one at https://id.atlassian.com/manage-profile/security/api-tokens')
     }
   }
@@ -294,9 +316,10 @@ async function cmdCard(flags, positionals) {
   const top = root.out.trim()
   let slug = rest.length > 0 ? slugify(rest.join(' ')) : ''
   if (!slug) {
-    const sw = findSwClone(top, flags['sw-dir'])
-    if (sw) {
-      const r = run('uv', ['run', '--env-file', '.env', 'symphony-workflow', 'search', `key = ${key}`], { cwd: sw, timeout: 30000 })
+    const st = gather(top, flags)
+    if (st.envFilled) {
+      const [cmd, args, cwd] = searchCommand(st, `key = ${key}`)
+      const r = run(cmd, args, { cwd, timeout: 120000 })
       const issue = r.ok ? parseSearch(r.out)[0] : undefined
       if (issue) slug = slugify(issue.summary)
     }
@@ -320,9 +343,10 @@ async function cmdCard(flags, positionals) {
 const HELP = `symphony-walkman setup CLI
 
   doctor [--json]        check everything and say how to fix what is missing
-  setup [--project JEV] [--sw-dir PATH] [--yes] [--dry-run]
-                         install the symphony-workflow plugin, clone it, prepare its .env, write the
-                         repo settings, then verify the Jira lookup. Shows the plan first.
+  setup [--project JEV] [--creds PATH] [--yes] [--dry-run]
+                         install the plugin (it brings the symphony-workflow skills), prepare the Jira
+                         credentials file, download the CLI once, write the repo settings, then verify the
+                         Jira lookup. Shows the plan first.
   card KEY-123 [slug]    create .claude/worktrees/<key>-<slug> on branch KEY-123-<slug> (slug from Jira if empty)
 
 options: --repo PATH (default: current directory)
@@ -331,7 +355,7 @@ Run without installing:  npx --yes github:cloud-f1/symphony-walkman <command>
 It never prints a credential and never writes to Jira.`
 
 export async function main(argv) {
-  const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options: { repo: { type: 'string' }, project: { type: 'string' }, 'sw-dir': { type: 'string' }, yes: { type: 'boolean' }, 'dry-run': { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } })
+  const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options: { repo: { type: 'string' }, project: { type: 'string' }, 'sw-dir': { type: 'string' }, creds: { type: 'string' }, yes: { type: 'boolean' }, 'dry-run': { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } })
   const [cmd, ...rest] = positionals
   if (values.help || !cmd || cmd === 'help') return console.log(HELP), 0
   if (cmd === 'doctor') {

@@ -27,7 +27,7 @@ function stubs(on: any, setup: Setup = {}) {
     if (cmd === 'git' && a === 'worktree' && ++worktreeCalls > (setup.worktreeOkCalls ?? Infinity)) throw new Error('aborted')
     if (cmd === 'git' && a === 'worktree') return { value: { exitCode: 0, stdout: setup.porcelain ?? PORCELAIN, stderr: '' } }
     if (cmd === 'git' && a === 'rev-parse' && b === '--show-toplevel') return { value: { exitCode: 0, stdout: CWD + '\n', stderr: '' } }
-    if (cmd === 'uv') { jiraCalls.push(e.argv.join(' ')); return { value: { exitCode: setup.jiraExit ?? 0, stdout: setup.jiraOut ?? '', stderr: setup.jiraExit ? 'Jira API error 401' : '' } } }
+    if (cmd === 'uv' || cmd === 'uvx') { jiraCalls.push(e.argv.join(' ')); return { value: { exitCode: setup.jiraExit ?? 0, stdout: setup.jiraOut ?? '', stderr: setup.jiraExit ? 'Jira API error 401' : '' } } }
     if (cmd === 'df') return { value: { exitCode: 0, stdout: DF, stderr: '' } }
     return { value: { exitCode: 127, stdout: '', stderr: '' } }
   })
@@ -183,6 +183,23 @@ test('a waiting card keeps its first-seen time instead of resetting to 0:00 on e
   await walkman($, 'board')
   const dbg = (await walkman($, 'debug')).text
   expect(dbg).toContain('CF1-195:waiting')
+})
+
+test('without a clone, the lookup runs the released CLI through uvx with the credentials file', async ($, on) => {
+  const s = stubs(on, { env: { WALKMAN_JIRA_PROJECT: 'CF1', WALKMAN_JIRA_ENV_FILE: '/creds/.env' }, files: { '/creds/.env': '' }, jiraOut: JIRA_OUT })
+  const out = (await walkman($, 'board')).text
+  expect(out).toContain('DevOpsDays visuals')
+  expect(s.jiraCalls[0]).toContain('uvx --env-file /creds/.env --from git+https://github.com/cloud-f1/symphony-workflow@v')
+  expect(s.jiraCalls[0]).toContain('symphony-workflow search')
+  expect(s.jiraCalls[0]).not.toMatch(/transition|comment|create|rollup|add-subtasks|call /)
+})
+
+test('a missing credentials file says where it looked and never runs anything', async ($, on) => {
+  const s = stubs(on, { env: { WALKMAN_JIRA_PROJECT: 'CF1' } })
+  const out = (await walkman($, 'board')).text
+  expect(out).toContain('CF1-195') // the worktree card still shows
+  expect(out).toContain('no credentials file at /home/u/.config/symphony-workflow/.env')
+  expect(s.jiraCalls).toEqual([])
 })
 
 test('pane opens and closes', async ($, on) => {
