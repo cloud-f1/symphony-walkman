@@ -28,8 +28,19 @@ disk · 74 GB free · 84% used
 1 running · 1 done · 1 needs you
 ```
 
-- A strip above the prompt shows the most urgent card (terminal: one text line; Desktop: the signal drawing plus the line).
-- `/walkman board` prints the board. `/walkman pane` opens it as a side pane; `/walkman pane close` closes it.
+- A strip above the prompt shows the most urgent card (terminal: one colored line; Desktop: the signal drawing plus the line).
+- Colors follow your theme and the status line: green is going, red is needs-you or failed, dim is idle; the disk line turns yellow at 80% used and red at 90%.
+
+One command does it all:
+
+| You type | You get |
+|---|---|
+| `/walkman` | The colored side pane. If there is no room for a pane, the printed board instead |
+| `/walkman board` | The board printed into the conversation (plain text, a legend underneath) |
+| `/walkman pane close` | Closes the pane (Esc does too) |
+| `/walkman help` | The three lines above plus the legend |
+
+The plugin also ships three skills (`walkman`, `walkman-dev`, `jira-walk`). They are for Claude, not for you, and are hidden from the `/` menu.
 
 ## How it knows the card
 
@@ -96,11 +107,11 @@ Auto-update has had reports of fetching without applying a new version in some 2
 
 | Check | Result |
 |---|---|
-| `checks/*.check.ts` (11 tests: branch parsing, light priority, run state, `df`, board, SVG, release version match) | Passed |
+| `checks/*.check.ts` (17 tests: branch parsing, light priority, run state, `df`, board, styled board and pane, SVG, release version match) | Passed |
 | `claude plugin test` (8 Mod tests on a stubbed host, terminal and desktop surfaces) | Passed |
 | `claude plugin validate --strict .` | Passed |
 | Real engine, headless (`claude -p --plugin-dir`, scratch repo with two card worktrees, 2026-10-11) | Passed: module loaded, all 7 event kinds registered, `turn.start` fired and ran `git`. Slash commands are not run headless, so the board output was not seen this way |
-| Real interactive terminal session (board, band, pane) | **Not run**: a scripted attempt captured only the startup escape codes |
+| Real interactive terminal session (installed from the public marketplace, 2026-10-11, screenshots from the owner) | Passed so far: `/walkman board` printed both card rows, idle, with the disk line; the pane opened and closed. **Not yet seen:** the band above the prompt, and the colors added in 0.1.2 |
 | Claude Desktop (the `Svg` signal, walking animation) | **Not run**; the drawing is only checked as a string |
 | `tool.check` returning `ask` while a permission dialog is open | Assumed from the API docs; stub-tested only |
 | `turn.complete` `reason` values meaning "failed" | **Guess**: `refusal` or anything containing `error` |

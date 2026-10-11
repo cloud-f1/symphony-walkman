@@ -79,6 +79,32 @@ test('no card branch gives the hint, not an error', async ($, on) => {
   expect((await walkman($, 'board')).text).toContain('No card branch found')
 })
 
+test('/walkman with no argument opens the pane, and help explains the symbols', async ($, on) => {
+  const s = stubs(on)
+  await walkman($, '')
+  expect(s.panes).toContain('open:walkman-pane')
+  const help = await walkman($, 'help')
+  expect(help.text).toContain('/walkman board')
+  expect(help.text).toContain('needs you')
+})
+
+test('board starts with a header line so the host prefix does not push the first row', async ($, on) => {
+  stubs(on)
+  const out = await walkman($, 'board')
+  expect(out.text.split('\n')[0]).toBe('Walkman board')
+  expect(out.text).toContain('🟢 working')
+})
+
+test('the pane and the band are drawn in theme colors', async ($, on) => {
+  stubs(on)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const pane: any = await ($ as any).ui.render({ surface: 'terminal', component: 'Pane', requestId: 'walkman-pane', props: {} })
+  expect(flat(pane)).toContain('"color":"success"')
+  expect(flat(pane)).toContain('CF1-195')
+  const band: any = await ($ as any).ui.render({ surface: 'terminal', component: 'AbovePrompt', props: {} })
+  expect(flat(band)).toContain('"color":"success"')
+})
+
 test('pane opens and closes', async ($, on) => {
   const s = stubs(on)
   await walkman($, 'pane')

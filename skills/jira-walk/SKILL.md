@@ -1,5 +1,6 @@
 ---
 name: jira-walk
+user-invocable: false
 description: WALK-specific rules for symphony-walkman's Jira tickets. Use when the user asks to audit, sync, create, comment on or close tickets for symphony-walkman, or says "Jira WALK". The commands themselves come from the jira-ticket-ops skill.
 ---
 

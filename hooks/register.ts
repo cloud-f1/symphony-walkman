@@ -5,7 +5,9 @@ import type { EngineInterface as Engine, On, PluginOptions, RenderElement } from
 import { cardFromBranch, parseWorktrees } from '../core/card.ts'
 import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf } from '../core/disk.ts'
-import { renderBand, renderBoard } from '../core/board.ts'
+import { renderBoard } from '../core/board.ts'
+import { HELP, LEGEND, plain, stylePane, styleBand } from '../core/style.ts'
+import type { Line, Tone } from '../core/style.ts'
 import { signalSvg } from '../core/svg.ts'
 import type { CardRow, Disk, RunState } from '../core/contracts.ts'
 
@@ -27,6 +29,16 @@ async function expandHome($: Engine, p: string): Promise<string> {
   const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE')) || ''
   const out = p === '~' || p.startsWith('~/') ? home + p.slice(1) : p
   return /^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(out) ? out : ''
+}
+
+
+// Tones follow the person's theme (the same keys the status line colors map to).
+const THEME: Record<Tone, string> = { success: 'success', error: 'error', warning: 'warning', subtle: 'inactive', text: 'text' }
+
+// One styled line as a row of Text pieces. Wrapping is off so a narrow pane never splits a card.
+function styled(Box: never, Text: never, line: Line): unknown {
+  if (line.length === 0) return h(Text, null, ' ')
+  return h(Box, { flexDirection: 'row' }, ...line.map((seg) => h(Text, { color: THEME[seg.tone ?? 'text'], bold: seg.bold === true, wrap: 'truncate-end' }, seg.text)))
 }
 
 async function readRunState($: Engine, key: string): Promise<RunState | undefined> {
@@ -100,7 +112,7 @@ export function register(on: On, options?: PluginOptions) {
 
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: 'walkman', description: 'Symphony Walkman: board | pane | pane close', argumentHint: 'board|pane|pane close' })
+      await $.command.register({ name: 'walkman', description: 'Card board: colored side pane (default), board (print), pane close', argumentHint: 'board|pane|pane close' })
     } catch {
       // A taken command name must not stop the session from starting.
     }
@@ -134,27 +146,39 @@ export function register(on: On, options?: PluginOptions) {
 
   on('command.run', { command: 'walkman' }, async ($, e) => {
     const [sub, arg] = String(e.args ?? '').trim().split(/\s+/)
-    if (sub === 'pane') {
+    const openPane = async () => {
       try {
-        if (arg === 'close') {
-          await $.ui.close({ id: PANE_ID })
-          return { text: 'Pane closed.' }
-        }
         const opened = await $.ui.open({ id: PANE_ID, title: 'Walkman', closeOnEscape: true })
-        return { text: opened.isPlaced ? 'Walkman pane opened. /walkman pane close (or Esc) closes it.' : 'Walkman pane is waiting: widen the terminal to see it.' }
+        return opened.isPlaced
       } catch {
-        return { text: 'Could not open the pane here.' }
+        return false
       }
     }
+    if (sub === 'help') return { text: ['Walkman', HELP, plain(LEGEND)].join('\n') }
+    if (sub === 'pane' && arg === 'close') {
+      try {
+        await $.ui.close({ id: PANE_ID })
+        return { text: 'Pane closed.' }
+      } catch {
+        return { text: 'Could not close the pane here.' }
+      }
+    }
+    if (sub === 'pane' || sub === undefined || sub === '') {
+      if (await openPane()) return { text: 'Walkman pane opened. /walkman pane close (or Esc) closes it.' }
+      if (sub === 'pane') return { text: 'Walkman pane is waiting: widen the terminal to see it.' }
+      // /walkman with no room for a pane: fall through to the printed board.
+    }
     await refresh($)
-    return { text: renderBoard(cache.rows, cache.disk, await $.clock.now()).join('\n') }
+    // The host puts "<plugin>:" in front of the first line, so a header line keeps the rows aligned.
+    const lines = renderBoard(cache.rows, cache.disk, await $.clock.now())
+    return { text: ['Walkman board', ...lines, '', plain(LEGEND)].join('\n') }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     await refresh($)
-    const lines = renderBoard(cache.rows, cache.disk, await $.clock.now())
-    return h(Box, { flexDirection: 'column', paddingX: 1 }, ...lines.map((line) => h(Text, null, line))) as RenderElement
+    const lines = stylePane(cache.rows, cache.disk, await $.clock.now())
+    return h(Box, { flexDirection: 'column', paddingX: 1 }, ...lines.map((line) => styled(Box as never, Text as never, line))) as RenderElement
   })
 
   // The always-on strip above the prompt: one text line on the terminal, the signal drawing on Desktop.
@@ -171,10 +195,10 @@ export function register(on: On, options?: PluginOptions) {
         { flexDirection: 'row', paddingX: 1 },
         // Svg is a leaf: call the constructor directly, since h() would hand it an empty `children`.
         (Svg as (props: object) => unknown)({ source: signalSvg(lead.light, Math.floor((now - lead.sinceMs) / 1000)), alt: `${lead.key} is ${lead.light}`, width: 120, height: 64 }),
-        h(Text, null, ' ' + renderBand(cache.rows, now)),
+        h(Box, { flexDirection: 'row', paddingX: 1 }, styled(Box as never, Text as never, styleBand(cache.rows, now))),
       ) as RenderElement
     }
     const { Box, Text } = $.ui.resolve(e)
-    return h(Box, { paddingX: 1 }, h(Text, null, renderBand(cache.rows, now))) as RenderElement
+    return h(Box, { paddingX: 1 }, styled(Box as never, Text as never, styleBand(cache.rows, now))) as RenderElement
   })
 }
