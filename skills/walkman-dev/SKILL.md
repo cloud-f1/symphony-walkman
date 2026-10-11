@@ -33,3 +33,9 @@ Core checks live in `checks/*.check.ts` on purpose: `claude plugin test` loads e
 
 - Say exactly what ran. Stub results are not evidence of real-session behavior; keep the README "What is verified" table current when that changes.
 - Do not push or publish without the owner's go-ahead (the repo is public). Never put a real key in the repo, tests or chat.
+
+## Releasing
+
+- Any user-visible change bumps `version` in `.claude-plugin/plugin.json` and `package.json` together (`checks/release.check.ts` enforces it). Without a new version string, installed copies never update.
+- Tag the merge commit `vX.Y.Z` and push the tag.
+- Auto-update is verified only when an installed copy picks up a later release; say so in the README if that has not been seen yet.

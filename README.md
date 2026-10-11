@@ -63,11 +63,40 @@ Walkman only reads. To move the Jira cards it shows (audit, transition, roll up)
 
 That plugin does not include the CLI itself; clone [cloud-f1/symphony-workflow](https://github.com/cloud-f1/symphony-workflow) and run `uv sync`. Walkman works without any of this. If you set `runs_dir` to that repo's `docs/runs`, a card whose run is in `plan_ready` lights the red man.
 
+## Updates
+
+Claude Code only offers an update when the plugin's `version` changes, so every release bumps it (`.claude-plugin/plugin.json` and `package.json`, kept equal by `npm test`).
+
+Turn on auto-update for this marketplace once: in Claude Code run `/plugin`, open **Marketplaces**, pick `symphony-walkman` and choose **Enable auto-update**. Third-party marketplaces start with it off.
+
+To set it up for everyone who opens a project, commit this to the project's `.claude/settings.json`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "symphony-walkman": {
+      "source": { "source": "github", "repo": "cloud-f1/symphony-walkman" },
+      "autoUpdate": true
+    }
+  },
+  "enabledPlugins": { "symphony-walkman@symphony-walkman": true }
+}
+```
+
+Update by hand at any time:
+
+```
+/plugin marketplace update symphony-walkman
+/reload-plugins
+```
+
+Auto-update has had reports of fetching without applying a new version in some 2.1.x builds. If a release does not arrive, run the two commands above.
+
 ## What is verified
 
 | Check | Result |
 |---|---|
-| `checks/core.check.ts` (9 tests: branch parsing, light priority, run state, `df`, board, SVG) | Passed |
+| `checks/*.check.ts` (11 tests: branch parsing, light priority, run state, `df`, board, SVG, release version match) | Passed |
 | `claude plugin test` (8 Mod tests on a stubbed host, terminal and desktop surfaces) | Passed |
 | `claude plugin validate --strict .` | Passed |
 | Real engine, headless (`claude -p --plugin-dir`, scratch repo with two card worktrees, 2026-10-11) | Passed: module loaded, all 7 event kinds registered, `turn.start` fired and ran `git`. Slash commands are not run headless, so the board output was not seen this way |
