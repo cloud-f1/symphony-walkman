@@ -3,7 +3,7 @@
 // Plain ESM with no dependencies, so `npx` can run it on any Node >= 18 (the Mod itself is TypeScript).
 // It never prints a credential: .env files are read for variable NAMES only.
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -346,7 +346,16 @@ export async function main(argv) {
   return 1
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// npx and npm link run this through a symlink in node_modules/.bin, so compare real paths.
+const isMain = (() => {
+  try {
+    return Boolean(process.argv[1]) && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
+  } catch {
+    return false
+  }
+})()
+
+if (isMain) {
   main(process.argv.slice(2)).then((code) => process.exit(code), (err) => {
     console.error(String(err?.message ?? err))
     process.exit(1)
