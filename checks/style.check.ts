@@ -4,6 +4,8 @@ import { LEGEND, plain, progressBar, styleBand, stylePane, styleBoard } from '..
 import { renderBoard } from '../core/board.ts'
 import type { CardRow } from '../core/contracts.ts'
 import { buildJql, mergeJira, parseSearch } from '../core/jira.ts'
+import { DOCKER_DF_ARGV, DOCKER_PS_ARGV, DOCKER_VERSION_ARGV, classifyFailure, parseDf, parsePs, renderDocker } from '../core/docker.ts'
+import { doctorLines, envNames } from '../core/doctor.ts'
 
 const row = (over: Partial<CardRow>): CardRow => ({ key: 'CF1-195', slug: 'devopsday-visuals', branch: 'CF1-195-devopsday-visuals', worktree: '/w', light: 'walking', sinceMs: 0, ...over })
 
@@ -76,4 +78,63 @@ test('board and pane list the Jira-only cards, capped, with a title in place of 
   assert.ok(wide.some((l) => l.includes('+2 more')))
   const pane = stylePane(rows, undefined, 0, others).map(plain)
   for (const l of pane.slice(0, 2)) assert.ok([...l].length <= 44, `too wide: ${l}`)
+})
+
+const PS = 'api-1\tshop-api\tUp 4 hours\ndb-1\tpostgres:16\tUp 3 days (healthy)\ncache-1\tredis:7\tRestarting (1) 5 seconds ago\n'
+const DF = 'Images\t18\t13.29GB\t5.0GB (37%)\nVolumes\t117\t9.1GB\t6.8GB (74%)\n'
+
+test('docker: parse ps and system df, flag a restarting container, cap the list', () => {
+  const containers = parsePs(PS)
+  assert.equal(containers.length, 3)
+  assert.deepEqual(containers[1], { name: 'db-1', image: 'postgres:16', status: 'Up 3 days (healthy)' })
+  const lines = renderDocker({ kind: 'ok', version: '29.4.0', containers, usage: parseDf(DF) })
+  assert.equal(lines[0], 'Docker 29.4.0 · 3 running')
+  assert.ok(lines.some((l) => l.includes('! cache-1')), 'a restarting container is flagged')
+  assert.ok(lines.some((l) => l.includes('● api-1')))
+  assert.ok(lines.some((l) => l.includes('reclaimable 5.0GB (37%)')))
+  const many = Array.from({ length: 15 }, (_, i) => ({ name: `c${i}`, image: 'i', status: 'Up' }))
+  assert.ok(renderDocker({ kind: 'ok', version: '1', containers: many, usage: [] }).some((l) => l.includes('+3 more')))
+  assert.ok(renderDocker({ kind: 'ok', version: '1', containers: [], usage: [] }).some((l) => l.includes('nothing running')))
+})
+
+test('docker: missing and a stopped daemon are told apart, with a way forward', () => {
+  assert.equal(classifyFailure(127, ''), 'missing')
+  assert.equal(classifyFailure(undefined, '', 'Error: spawn docker ENOENT'), 'missing')
+  assert.equal(classifyFailure(1, 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock'), 'down')
+  assert.match(renderDocker({ kind: 'missing' })[0] as string, /not found/)
+  assert.ok(renderDocker({ kind: 'down', detail: 'Cannot connect' }).join('\n').includes('Start Docker Desktop'))
+})
+
+test('docker: the only commands that can ever run are version, ps and system df', () => {
+  for (const argv of [DOCKER_VERSION_ARGV, DOCKER_PS_ARGV, DOCKER_DF_ARGV]) {
+    assert.equal(argv[0], 'docker')
+    assert.ok(['version', 'ps', 'system'].includes(argv[1] as string))
+    assert.ok(!argv.some((a) => /^(rm|stop|kill|run|exec|prune|restart|pull|push|build)$/.test(a)))
+  }
+  assert.deepEqual(DOCKER_DF_ARGV.slice(1, 3), ['system', 'df'])
+})
+
+test('doctor lines: say what is wrong and never show a credential value', () => {
+  const base = { project: 'JEV', cloneDir: '', envFile: '/c/.env', envNames: { JIRA_BASE_URL: true, JIRA_EMAIL: true, JIRA_API_TOKEN: true }, uvx: true, settingsCreds: 'none', cardCount: 1, jiraError: undefined, jiraCount: 4, setupCommand: 'npx x setup' }
+  const ok = doctorLines(base)
+  assert.ok(ok.every((l) => l.startsWith('✓')), ok.join('\n'))
+  const bad = doctorLines({ ...base, envNames: { JIRA_BASE_URL: true, JIRA_EMAIL: false }, uvx: false, jiraError: 'exit 1: nope', cardCount: 0 })
+  assert.ok(bad.some((l) => l.startsWith('✗ uvx')))
+  assert.ok(bad.some((l) => l.includes('missing JIRA_EMAIL, JIRA_API_TOKEN')))
+  assert.ok(bad.some((l) => l.includes('last Jira lookup failed: exit 1')))
+  assert.ok(doctorLines({ ...base, project: '' }).some((l) => l.includes('WALKMAN_JIRA_PROJECT is not set')))
+  assert.ok(doctorLines({ ...base, envNames: undefined }).some((l) => l.includes('no credentials file')))
+  const names = envNames('JIRA_API_TOKEN=supersecret\nJIRA_EMAIL=\n')
+  assert.ok(!JSON.stringify(doctorLines({ ...base, envNames: names })).includes('supersecret'))
+})
+
+test('doctor lines: credentials from plugin settings, partial settings, and what the skills still need', () => {
+  const base = { project: 'JEV', cloneDir: '', envFile: '/c/.env', envNames: undefined, uvx: true, settingsCreds: 'complete', cardCount: 1, jiraError: undefined, jiraCount: 4, setupCommand: 'npx x setup' }
+  const complete = doctorLines(base).join('\n')
+  assert.ok(complete.includes('come from the plugin settings'))
+  assert.ok(complete.includes('the ticket skills and the CLI read /c/.env'))
+  assert.ok(!complete.includes('✗'), complete)
+  const partial = doctorLines({ ...base, settingsCreds: 'partial:URL+email' }).join('\n')
+  assert.ok(partial.includes('incomplete (set: URL, email; need URL, email and token)'))
+  assert.ok(doctorLines({ ...base, settingsCreds: 'none' }).join('\n').includes('no credentials file'))
 })

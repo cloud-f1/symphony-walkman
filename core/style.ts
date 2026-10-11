@@ -20,7 +20,14 @@ export const LEGEND: Line = [
   { text: '✓', tone: 'success' }, { text: ' done  ', tone: 'subtle' },
   { text: '○', tone: 'subtle' }, { text: ' idle', tone: 'subtle' },
 ]
-export const HELP = '/walkman: colored side pane · /walkman board: print it · /walkman pane close: close the pane'
+export const HELP = [
+  '/walkman            colored side pane (board if there is no room)',
+  '/walkman board      print the board',
+  '/walkman pane close close the pane',
+  '/walkman docker     running containers and disk use (read only)',
+  '/walkman doctor     check the Jira link, credentials file, uvx and worktrees',
+  '/walkman version    plugin, symphony-workflow and Claude Code versions',
+].join('\n')
 
 export const plain = (line: Line): string => line.map((s) => s.text).join('')
 
