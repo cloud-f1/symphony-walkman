@@ -40,7 +40,7 @@ One command does it all:
 | `/walkman pane close` | Closes the pane (Esc does too) |
 | `/walkman help` | The three lines above plus the legend |
 
-The plugin also ships three skills (`walkman`, `walkman-dev`, `jira-walk`). They are for Claude, not for you, and are hidden from the `/` menu.
+The plugin also ships three skills (`using-walkman`, `developing-walkman`, `tracking-walk-tickets`). They are for Claude, not for you, and are hidden from the `/` menu.
 
 ## How it knows the card
 
@@ -126,4 +126,4 @@ npm test            # core checks (node --test) then `claude plugin test`
 claude plugin validate --strict .
 ```
 
-`core/*.ts` is pure. `hooks/register.ts` is the only file that calls the mods API. See [skills/walkman-dev/SKILL.md](skills/walkman-dev/SKILL.md) and [docs/PLAN.md](docs/PLAN.md).
+`core/*.ts` is pure. `hooks/register.ts` is the only file that calls the mods API. See [skills/developing-walkman/SKILL.md](skills/developing-walkman/SKILL.md) and [docs/PLAN.md](docs/PLAN.md).

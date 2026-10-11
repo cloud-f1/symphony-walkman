@@ -1,10 +1,10 @@
 ---
-name: walkman
+name: using-walkman
 user-invocable: false
 description: Explain and operate the Symphony Walkman board. Use when the user asks which card Claude is working on, what the green or red man means, or how to open the board or pane.
 ---
 
-# Symphony Walkman
+# Using Symphony Walkman
 
 - `/walkman` opens the colored side pane (it prints the board when there is no room for a pane).
 - `/walkman board` prints one row per card worktree (`KEY-n-slug` branch) with its light, state and elapsed time, plus free disk space.

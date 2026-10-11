@@ -1,5 +1,5 @@
 ---
-name: walkman-dev
+name: developing-walkman
 user-invocable: false
 description: Contributor rules for the symphony-walkman repo itself (architecture rules, test commands, honesty rules). Use when editing core/, hooks/register.ts, tests or the README of symphony-walkman.
 ---
@@ -40,3 +40,9 @@ Core checks live in `checks/*.check.ts` on purpose: `claude plugin test` loads e
 - Any user-visible change bumps `version` in `.claude-plugin/plugin.json` and `package.json` together (`checks/release.check.ts` enforces it). Without a new version string, installed copies never update.
 - Tag the merge commit `vX.Y.Z` and push the tag.
 - Auto-update is verified only when an installed copy picks up a later release; say so in the README if that has not been seen yet.
+
+## Naming
+
+- Skills are named verb-ing, lowercase kebab-case, and say what they do: `using-walkman`, `developing-walkman`, `tracking-walk-tickets`. Do not repeat the plugin name (Claude Code already shows `symphony-walkman:` in front), and keep the folder name equal to `name:`.
+- All skills here are `user-invocable: false`; the only thing a person types is `/walkman`.
+- Slash commands are short nouns or verbs (`/walkman`), because people type them.
