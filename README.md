@@ -45,14 +45,41 @@ The plugin also ships three skills (`using-walkman`, `developing-walkman`, `trac
 
 ## How it knows the card
 
-A card is a **git worktree whose branch starts with a Jira key**: `CF1-195-devopsday-visuals`. The Mod runs `git worktree list --porcelain`, so every card worktree of the repo gets its own row. Branches like `main` or `chore-x` are not cards. No Jira call is needed for this.
+A card is a **git worktree whose branch starts with a Jira key**: `CF1-195-devopsday-visuals`. The Mod runs `git worktree list --porcelain`, so every card worktree of the repo gets its own row, and the 🟢 on a row means Claude is working in that worktree. Branches like `main` or `chore-x` are not cards. No Jira call is needed for this.
+
+To light a card in a repo that works on `main`, give each card its own worktree. For a repo linked to Jira project `JEV`:
+
+```bash
+git worktree add .claude/worktrees/jev-47-withhold-secrets -b JEV-47-withhold-secrets origin/main
+cd .claude/worktrees/jev-47-withhold-secrets && claude
+```
 
 Optional: set **symphony-workflow runs folder** in the plugin settings to the folder that holds `<KEY>/run.json` (symphony-workflow's `docs/runs`). The Mod then reads the run `state` and lights `plan_ready` red. It only reads.
+
+## Jira titles and the in-progress list (optional)
+
+A repo linked to a Jira project can show titles and what is in progress, even while you are on `main`:
+
+```
+Walkman board
+○  JEV-47    Withhold secret-like blocks   idle
+
+In progress in Jira
+  JEV-48    Optional masking of personal data  In Progress
+  JEV-35    The default goal no longer drops…  In Progress
+```
+
+It runs `uv run --env-file .env symphony-workflow search '<JQL>'` in your [symphony-workflow](https://github.com/cloud-f1/symphony-workflow) clone, at most once a minute and never while drawing. The query is fixed to your project's Story-level cards that are In Progress, plus the cards that have a worktree. Set it up in two places:
+
+- Per repo, in that repo's `.claude/settings.json` (so each repo names its own project): `{ "env": { "WALKMAN_JIRA_PROJECT": "JEV" } }`
+- Per person, once: the plugin setting **symphony-workflow checkout** (or the env var `WALKMAN_SYMPHONY_WORKFLOW_DIR`) set to your clone, which holds the `.env` with your Jira credentials.
+
+If the lookup fails (no `uv`, bad credentials, offline), the board still prints and says `jira lookup: …` on one line. `/walkman debug` shows the last result.
 
 ## What it will not do
 
 - It never writes to Jira, to symphony-workflow's files, or to your repo.
-- It makes no network calls and needs no API key.
+- It makes no network calls of its own and holds no API key. The optional Jira lookup only runs the read-only `symphony-workflow search` you point it at; your credentials stay in that clone's `.env`.
 - If git, a run file or `df` is missing or unreadable, the row or the disk line is simply left out. It never throws into your session.
 
 ## Install
@@ -114,6 +141,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | Real engine, headless (`claude -p --plugin-dir`, scratch repo with two card worktrees, 2026-10-11) | Passed: module loaded, all 7 event kinds registered, `turn.start` fired and ran `git`. Slash commands are not run headless, so the board output was not seen this way |
 | Real interactive terminal session, installed from the public marketplace (owner screenshots, 2026-10-11) | Passed: `/walkman board` printed both card rows with the disk line; the pane opened and closed |
 | Real interactive terminal session, scripted (a pty with a terminal emulator, `--plugin-dir`, a scratch repo with two card worktrees, 2026-10-11) | Passed: `/walkman` is in the `/` menu with its description; the pane opens with theme colors (green, red, dim) and a legend; `/walkman board` prints after the pane was open; the band shows `🟢 running` with the clock ticking 0:03, 0:07 during a real turn and goes back to idle. Found and fixed in 0.1.5: an empty board after the pane opened, and a band that stayed idle during a turn |
+| Jira lookup in a scripted real session (repo on `main`, `WALKMAN_JIRA_PROJECT=JEV`, the real symphony-workflow CLI, 2026-10-11) | Passed: on `main` the board and pane listed the four In Progress JEV Stories read live from Jira; in a `JEV-48-…` worktree the row showed the Jira title and the list left that card out |
 | Claude Desktop (the `Svg` signal, walking animation) | **Not run**; the drawing is only checked as a string |
 | `tool.check` returning `ask` while a permission dialog is open | Assumed from the API docs; stub-tested only |
 | `turn.complete` `reason` values meaning "failed" | **Guess**: `refusal` or anything containing `error` |
