@@ -39,6 +39,7 @@ One command does it all:
 | `/walkman board` | The board printed into the conversation (plain text, a legend underneath) |
 | `/walkman pane close` | Closes the pane (Esc does too) |
 | `/walkman help` | The three lines above plus the legend |
+| `/walkman debug` | What the plugin last read and signalled (for bug reports). It also runs while Claude is working |
 
 The plugin also ships three skills (`using-walkman`, `developing-walkman`, `tracking-walk-tickets`). They are for Claude, not for you, and are hidden from the `/` menu.
 
@@ -111,7 +112,8 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | `claude plugin test` (8 Mod tests on a stubbed host, terminal and desktop surfaces) | Passed |
 | `claude plugin validate --strict .` | Passed |
 | Real engine, headless (`claude -p --plugin-dir`, scratch repo with two card worktrees, 2026-10-11) | Passed: module loaded, all 7 event kinds registered, `turn.start` fired and ran `git`. Slash commands are not run headless, so the board output was not seen this way |
-| Real interactive terminal session (installed from the public marketplace, 2026-10-11, screenshots from the owner) | Passed so far: `/walkman board` printed both card rows, idle, with the disk line; the pane opened and closed. **Not yet seen:** the band above the prompt, and the colors added in 0.1.2 |
+| Real interactive terminal session, installed from the public marketplace (owner screenshots, 2026-10-11) | Passed: `/walkman board` printed both card rows with the disk line; the pane opened and closed |
+| Real interactive terminal session, scripted (a pty with a terminal emulator, `--plugin-dir`, a scratch repo with two card worktrees, 2026-10-11) | Passed: `/walkman` is in the `/` menu with its description; the pane opens with theme colors (green, red, dim) and a legend; `/walkman board` prints after the pane was open; the band shows `🟢 running` with the clock ticking 0:03, 0:07 during a real turn and goes back to idle. Found and fixed in 0.1.5: an empty board after the pane opened, and a band that stayed idle during a turn |
 | Claude Desktop (the `Svg` signal, walking animation) | **Not run**; the drawing is only checked as a string |
 | `tool.check` returning `ask` while a permission dialog is open | Assumed from the API docs; stub-tested only |
 | `turn.complete` `reason` values meaning "failed" | **Guess**: `refusal` or anything containing `error` |
