@@ -7,8 +7,6 @@ import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf } from '../core/disk.ts'
 import { renderBoard } from '../core/board.ts'
 import { buildJql, mergeJira, parseSearch } from '../core/jira.ts'
-import { DOCKER_DF_ARGV, DOCKER_PS_ARGV, DOCKER_VERSION_ARGV, classifyFailure, parseDf as parseDockerDf, parsePs, renderDocker } from '../core/docker.ts'
-import type { DockerState } from '../core/docker.ts'
 import { doctorLines, envNames } from '../core/doctor.ts'
 import { SW_GIT, SW_REF, VERSION } from '../core/version.ts'
 import type { JiraIssue } from '../core/jira.ts'
@@ -264,25 +262,6 @@ async function mark($: Engine, patch: Partial<{ isWorking: boolean; askPending: 
   }
 }
 
-// Read-only Docker status. Only `version`, `ps` and `system df` are run (fixed argv in core/docker.ts).
-async function readDocker($: Engine): Promise<DockerState> {
-  let version: string
-  try {
-    const v = await $.process.run(DOCKER_VERSION_ARGV, { timeoutMs: 5000 })
-    if (v.exitCode !== 0) return classifyFailure(v.exitCode, v.stderr) === 'missing' ? { kind: 'missing' } : { kind: 'down', detail: v.stderr.trim().split('\n')[0] ?? '' }
-    version = v.stdout.trim()
-  } catch (err) {
-    return classifyFailure(undefined, '', String(err)) === 'missing' ? { kind: 'missing' } : { kind: 'down', detail: String(err).slice(0, 100) }
-  }
-  try {
-    const ps = await $.process.run(DOCKER_PS_ARGV, { timeoutMs: 8000 })
-    const df = await $.process.run(DOCKER_DF_ARGV, { timeoutMs: 15000 }).catch(() => undefined)
-    return { kind: 'ok', version, containers: ps.exitCode === 0 ? parsePs(ps.stdout) : [], usage: df && df.exitCode === 0 ? parseDockerDf(df.stdout) : [] }
-  } catch (err) {
-    return { kind: 'down', detail: String(err).slice(0, 100) }
-  }
-}
-
 async function versionText($: Engine): Promise<string> {
   let claude = 'unknown'
   try {
@@ -318,7 +297,7 @@ export function register(on: On, options?: PluginOptions) {
 
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: 'walkman', description: 'Card board: pane (default), board, docker, doctor, version, help', argumentHint: 'board|pane|pane close|docker|doctor|version|help', immediate: true })
+      await $.command.register({ name: 'walkman', description: 'Card board: pane (default), board, doctor, version, help', argumentHint: 'board|pane|pane close|doctor|version|help', immediate: true })
     } catch {
       // A taken command name must not stop the session from starting.
     }
@@ -367,9 +346,9 @@ export function register(on: On, options?: PluginOptions) {
       return { text: ['Walkman debug', `rows: ${cache.rows.map((r) => r.key + ':' + r.light + '@' + r.worktree).join(', ') || '(none)'}`, `live: ${[...live.entries()].map(([k, v]) => k + '=' + JSON.stringify(v)).join('; ') || '(none)'}`, `read: ${cache.why ?? '(none)'}`, `band renders: ${renders}`, `jira: ${jira.issues.length} issues, last read ${jira.at === -Infinity ? 'never' : 'ok'}${jira.error ? ', error ' + jira.error : ''}`, ...trace].join('\n') }
     }
     if (sub === 'version') return { text: await versionText($) }
-    if (sub === 'docker') return { text: ['Walkman docker', ...renderDocker(await readDocker($))].join('\n') }
     if (sub === 'doctor') return { text: await doctorText($) }
     if (sub === 'help') return { text: ['Walkman', HELP, 'Set up Jira linking: ' + SETUP_COMMAND, plain(LEGEND)].join('\n') }
+    if (sub && sub !== 'board' && sub !== 'pane') return { text: ['Walkman: unknown option "' + sub + '"', HELP].join('\n') }
     if (sub === 'pane' && arg === 'close') {
       try {
         await $.ui.close({ id: PANE_ID })

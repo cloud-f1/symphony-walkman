@@ -24,7 +24,6 @@ export const HELP = [
   '/walkman            colored side pane (board if there is no room)',
   '/walkman board      print the board',
   '/walkman pane close close the pane',
-  '/walkman docker     running containers and disk use (read only)',
   '/walkman doctor     check the Jira link, credentials file, uvx and worktrees',
   '/walkman version    plugin, symphony-workflow and Claude Code versions',
 ].join('\n')
