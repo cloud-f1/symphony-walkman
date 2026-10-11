@@ -52,6 +52,17 @@ Needs Claude Code **2.1.287 or later**.
 /plugin install symphony-walkman --marketplace cloud-f1/symphony-walkman
 ```
 
+### Optional: pair it with symphony-workflow
+
+Walkman only reads. To move the Jira cards it shows (audit, transition, roll up), add the `symphony-workflow-ops` plugin, which ships the `jira-ticket-ops` skill:
+
+```
+/plugin marketplace add cloud-f1/symphony-workflow
+/plugin install symphony-workflow-ops@symphony-workflow-marketplace
+```
+
+That plugin does not include the CLI itself; clone [cloud-f1/symphony-workflow](https://github.com/cloud-f1/symphony-workflow) and run `uv sync`. Walkman works without any of this. If you set `runs_dir` to that repo's `docs/runs`, a card whose run is in `plan_ready` lights the red man.
+
 ## What is verified
 
 | Check | Result |
