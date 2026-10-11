@@ -1,7 +1,7 @@
 {
   "name": "symphony-walkman",
   "displayName": "Symphony Walkman",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Pedestrian-signal board for Claude Code and Claude Desktop: the green walking man marks the Jira card Claude is working on, the red man marks a card waiting for you.",
   "author": { "name": "cloud-f1" },
   "homepage": "https://github.com/cloud-f1/symphony-walkman",
@@ -19,6 +19,25 @@
       "type": "string",
       "title": "Jira project key (optional)",
       "description": "For example JEV. With the setting below, the board shows card titles and the project's in-progress cards. Read only.",
+      "default": ""
+    },
+    "jira_base_url": {
+      "type": "string",
+      "title": "Jira site URL (optional)",
+      "description": "For example https://your-site.atlassian.net. With the email and token below, the board's Jira lookup needs no credentials file.",
+      "default": ""
+    },
+    "jira_email": {
+      "type": "string",
+      "title": "Jira account email (optional)",
+      "description": "The email of the Atlassian account that owns the API token.",
+      "default": ""
+    },
+    "jira_api_token": {
+      "type": "string",
+      "title": "Jira API token (optional)",
+      "description": "Create one at https://id.atlassian.com/manage-profile/security/api-tokens. Kept in Claude Code's secure storage and handed only to the read-only Jira lookup, as an environment variable, never on a command line.",
+      "sensitive": true,
       "default": ""
     },
     "jira_env_file": {

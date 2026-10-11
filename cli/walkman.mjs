@@ -347,6 +347,7 @@ const HELP = `symphony-walkman setup CLI
                          install the plugin (it brings the symphony-workflow skills), prepare the Jira
                          credentials file, download the CLI once, write the repo settings, then verify the
                          Jira lookup. Shows the plan first.
+  version                print this CLI's version, the pinned symphony-workflow release and Node
   card KEY-123 [slug]    create .claude/worktrees/<key>-<slug> on branch KEY-123-<slug> (slug from Jira if empty)
 
 options: --repo PATH (default: current directory)
@@ -363,6 +364,15 @@ export async function main(argv) {
     const list = checks(s, true)
     if (values.json) return console.log(JSON.stringify(list, null, 2)), list.some((c) => c.level === 'bad') ? 1 : 0
     return printChecks(list)
+  }
+  if (cmd === 'version') {
+    let v = 'unknown'
+    try {
+      v = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
+    } catch {
+      // an installed copy always has package.json; leave unknown otherwise
+    }
+    return console.log(`symphony-walkman ${v}\nJira lookup runs symphony-workflow ${SW_GIT.split('@')[1]} through uvx\nNode ${process.versions.node}`), 0
   }
   if (cmd === 'setup') return cmdSetup(values)
   if (cmd === 'card') return cmdCard(values, rest)

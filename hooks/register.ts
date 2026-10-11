@@ -7,6 +7,10 @@ import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf } from '../core/disk.ts'
 import { renderBoard } from '../core/board.ts'
 import { buildJql, mergeJira, parseSearch } from '../core/jira.ts'
+import { DOCKER_DF_ARGV, DOCKER_PS_ARGV, DOCKER_VERSION_ARGV, classifyFailure, parseDf as parseDockerDf, parsePs, renderDocker } from '../core/docker.ts'
+import type { DockerState } from '../core/docker.ts'
+import { doctorLines, envNames } from '../core/doctor.ts'
+import { SW_GIT, SW_REF, VERSION } from '../core/version.ts'
 import type { JiraIssue } from '../core/jira.ts'
 import { HELP, LEGEND, plain, stylePane, styleBand } from '../core/style.ts'
 import type { Line, Tone } from '../core/style.ts'
@@ -15,8 +19,6 @@ import type { CardRow, Disk, RunState } from '../core/contracts.ts'
 
 const PANE_ID = 'walkman-pane'
 const SETUP_COMMAND = 'npx --yes github:cloud-f1/symphony-walkman setup'
-// The symphony-workflow release the Jira lookup runs with `uvx` when no clone is configured. Bump with it.
-const SW_GIT = 'git+https://github.com/cloud-f1/symphony-workflow@v0.5.2'
 const DEFAULT_ENV_FILE = '~/.config/symphony-workflow/.env'
 const REFRESH_MS = 3000 // draws can repeat often; reread git / files at most this often
 
@@ -79,6 +81,19 @@ const jira: { at: number; keys: string; issues: JiraIssue[]; error?: string; inf
 
 // The project is per repo, so WALKMAN_JIRA_PROJECT (set in the repo's .claude/settings.json env) wins over the
 // plugin setting; the symphony-workflow folder is per person, so the setting is the usual place for it.
+type JiraCreds = { JIRA_BASE_URL: string; JIRA_EMAIL: string; JIRA_API_TOKEN: string }
+
+// Credentials given as plugin settings (the token is stored in secure storage) or, for scripts and tests, as
+// WALKMAN_JIRA_BASE_URL / _EMAIL / _API_TOKEN. All three are needed; a partial set is reported, never half-used.
+async function jiraCreds($: Engine): Promise<{ creds?: JiraCreds; set: string[] }> {
+  // $.env.get needs literal names, so each variable is spelled out.
+  const url = ((await $.env.get('WALKMAN_JIRA_BASE_URL')) || option('jira_base_url', '')).trim()
+  const email = ((await $.env.get('WALKMAN_JIRA_EMAIL')) || option('jira_email', '')).trim()
+  const token = ((await $.env.get('WALKMAN_JIRA_API_TOKEN')) || option('jira_api_token', '')).trim()
+  const set = [url && 'URL', email && 'email', token && 'token'].filter(Boolean) as string[]
+  return set.length === 3 ? { creds: { JIRA_BASE_URL: url, JIRA_EMAIL: email, JIRA_API_TOKEN: token }, set } : { set }
+}
+
 async function jiraSettings($: Engine): Promise<{ project: string; dir: string; envFile: string }> {
   const project = ((await $.env.get('WALKMAN_JIRA_PROJECT')) || option('jira_project', '')).trim()
   const dir = await expandHome($, (await $.env.get('WALKMAN_SYMPHONY_WORKFLOW_DIR')) || option('symphony_workflow_dir', ''))
@@ -107,10 +122,16 @@ async function fetchJira($: Engine, keys: string[]): Promise<void> {
     // With a symphony-workflow clone configured, run it there (the older way); otherwise run the released
     // CLI through uvx with the credentials file, so no clone or `uv sync` is needed.
     let run: { exitCode: number; stdout: string; stderr: string } | undefined
+    const { creds, set } = await jiraCreds($)
     if (dir !== '') {
       run = await $.process.run(['uv', 'run', '--env-file', '.env', 'symphony-workflow', 'search', jql], { cwd: dir, timeoutMs: 20000 })
+    } else if (creds) {
+      if (!/^https:\/\/[^\s/]+/.test(creds.JIRA_BASE_URL)) jira.error = 'the Jira site URL must start with https://'
+      else run = await $.process.run(['uvx', '--from', SW_GIT, 'symphony-workflow', 'search', jql], { env: { ...creds }, timeoutMs: 90000 }) // credentials go in the child's environment, never in argv
+    } else if (set.length > 0) {
+      jira.error = `Jira settings are incomplete (have ${set.join(', ')}; need URL, email and token)`
     } else if (envFile === '' || !(await $.fs.exists(envFile))) {
-      jira.error = `no credentials file at ${envFile || DEFAULT_ENV_FILE}; run: ${SETUP_COMMAND}`
+      jira.error = `no credentials: set the plugin's Jira URL, email and token, or put them in ${envFile || DEFAULT_ENV_FILE}; run: ${SETUP_COMMAND}`
     } else {
       run = await $.process.run(['uvx', '--env-file', envFile, '--from', SW_GIT, 'symphony-workflow', 'search', jql], { timeoutMs: 90000 })
     }
@@ -243,12 +264,61 @@ async function mark($: Engine, patch: Partial<{ isWorking: boolean; askPending: 
   }
 }
 
+// Read-only Docker status. Only `version`, `ps` and `system df` are run (fixed argv in core/docker.ts).
+async function readDocker($: Engine): Promise<DockerState> {
+  let version: string
+  try {
+    const v = await $.process.run(DOCKER_VERSION_ARGV, { timeoutMs: 5000 })
+    if (v.exitCode !== 0) return classifyFailure(v.exitCode, v.stderr) === 'missing' ? { kind: 'missing' } : { kind: 'down', detail: v.stderr.trim().split('\n')[0] ?? '' }
+    version = v.stdout.trim()
+  } catch (err) {
+    return classifyFailure(undefined, '', String(err)) === 'missing' ? { kind: 'missing' } : { kind: 'down', detail: String(err).slice(0, 100) }
+  }
+  try {
+    const ps = await $.process.run(DOCKER_PS_ARGV, { timeoutMs: 8000 })
+    const df = await $.process.run(DOCKER_DF_ARGV, { timeoutMs: 15000 }).catch(() => undefined)
+    return { kind: 'ok', version, containers: ps.exitCode === 0 ? parsePs(ps.stdout) : [], usage: df && df.exitCode === 0 ? parseDockerDf(df.stdout) : [] }
+  } catch (err) {
+    return { kind: 'down', detail: String(err).slice(0, 100) }
+  }
+}
+
+async function versionText($: Engine): Promise<string> {
+  let claude = 'unknown'
+  try {
+    const run = await $.process.run(['claude', '--version'], { timeoutMs: 3000 })
+    if (run.exitCode === 0) claude = run.stdout.trim().split(/\s+/)[0] ?? 'unknown'
+  } catch {
+    // not on PATH: leave unknown
+  }
+  return ['symphony-walkman ' + VERSION, `Jira lookup runs symphony-workflow ${SW_REF} through uvx`, 'Claude Code ' + claude].join('\n')
+}
+
+async function doctorText($: Engine): Promise<string> {
+  await refresh($)
+  const { project, dir, envFile } = await jiraSettings($)
+  let names: Record<string, boolean> | undefined
+  try {
+    names = (await $.fs.exists(envFile)) ? envNames(await $.fs.read(envFile)) : undefined
+  } catch {
+    names = undefined
+  }
+  let uvx = false
+  try {
+    uvx = (await $.process.run(['uvx', '--version'], { timeoutMs: 3000 })).exitCode === 0
+  } catch {
+    uvx = false
+  }
+  const { creds, set } = await jiraCreds($)
+  return ['Walkman doctor', ...doctorLines({ project, cloneDir: dir, envFile, envNames: names, uvx, settingsCreds: creds ? 'complete' : set.length > 0 ? 'partial:' + set.join('+') : 'none', cardCount: cache.rows.length, jiraError: jira.error, jiraCount: jira.at === -Infinity ? undefined : jira.issues.length, setupCommand: SETUP_COMMAND })].join('\n')
+}
+
 export function register(on: On, options?: PluginOptions) {
   pluginOptions = (options ?? {}) as Record<string, unknown>
 
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: 'walkman', description: 'Card board: colored side pane (default), board (print), pane close', argumentHint: 'board|pane|pane close', immediate: true })
+      await $.command.register({ name: 'walkman', description: 'Card board: pane (default), board, docker, doctor, version, help', argumentHint: 'board|pane|pane close|docker|doctor|version|help', immediate: true })
     } catch {
       // A taken command name must not stop the session from starting.
     }
@@ -296,6 +366,9 @@ export function register(on: On, options?: PluginOptions) {
       await refresh($)
       return { text: ['Walkman debug', `rows: ${cache.rows.map((r) => r.key + ':' + r.light + '@' + r.worktree).join(', ') || '(none)'}`, `live: ${[...live.entries()].map(([k, v]) => k + '=' + JSON.stringify(v)).join('; ') || '(none)'}`, `read: ${cache.why ?? '(none)'}`, `band renders: ${renders}`, `jira: ${jira.issues.length} issues, last read ${jira.at === -Infinity ? 'never' : 'ok'}${jira.error ? ', error ' + jira.error : ''}`, ...trace].join('\n') }
     }
+    if (sub === 'version') return { text: await versionText($) }
+    if (sub === 'docker') return { text: ['Walkman docker', ...renderDocker(await readDocker($))].join('\n') }
+    if (sub === 'doctor') return { text: await doctorText($) }
     if (sub === 'help') return { text: ['Walkman', HELP, 'Set up Jira linking: ' + SETUP_COMMAND, plain(LEGEND)].join('\n') }
     if (sub === 'pane' && arg === 'close') {
       try {
