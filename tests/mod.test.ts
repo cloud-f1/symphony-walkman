@@ -171,6 +171,20 @@ test('the Jira lookup only ever searches: no write verb is in what it runs', asy
   for (const call of s.jiraCalls) expect(call).not.toMatch(/transition|comment|create|rollup|add-subtasks|call /)
 })
 
+test('a run in plan_ready lights the red man when WALKMAN_RUNS_DIR points at the runs folder', async ($, on) => {
+  stubs(on, { env: { WALKMAN_RUNS_DIR: '/runs' }, files: { '/runs/CF1-195/run.json': '{"state":"plan_ready"}' } })
+  const out = (await walkman($, 'board')).text
+  expect(out).toContain('plan_ready')
+  expect(out).toContain('1 needs you')
+})
+
+test('a waiting card keeps its first-seen time instead of resetting to 0:00 on every read', async ($, on) => {
+  stubs(on, { env: { WALKMAN_RUNS_DIR: '/runs' }, files: { '/runs/CF1-195/run.json': '{"state":"plan_ready"}' } })
+  await walkman($, 'board')
+  const dbg = (await walkman($, 'debug')).text
+  expect(dbg).toContain('CF1-195:waiting')
+})
+
 test('pane opens and closes', async ($, on) => {
   const s = stubs(on)
   await walkman($, 'pane')

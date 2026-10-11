@@ -45,7 +45,7 @@ function styled(Box: never, Text: never, line: Line): unknown {
 }
 
 async function readRunState($: Engine, key: string): Promise<RunState | undefined> {
-  const dir = await expandHome($, option('runs_dir', ''))
+  const dir = await expandHome($, (await $.env.get('WALKMAN_RUNS_DIR')) || option('runs_dir', ''))
   if (dir === '') return undefined
   try {
     const path = dir + '/' + key + '/run.json'
@@ -137,6 +137,7 @@ function view(): { rows: CardRow[]; others: JiraIssue[] } {
 let lastBand = ''
 let renders = 0
 let ticker: { cancel: () => void } | undefined
+const seen = new Map<string, number>() // when a card was first seen in a light, for rows no live signal timed
 const trace: string[] = [] // last few signal events, for /walkman debug
 const note = (line: string) => {
   trace.push(line)
@@ -154,6 +155,21 @@ async function refresh($: Engine): Promise<void> {
     inflight = undefined
   })
   return inflight
+}
+
+// A card that is running, waiting or failed has a clock that must keep moving, so redraw once a second
+// while any is; an idle board draws nothing on a timer.
+function syncTicker($: Engine, rows: readonly CardRow[]): void {
+  const active = rows.some((r) => r.light === 'walking' || r.light === 'waiting' || r.light === 'failed')
+  try {
+    if (active && !ticker) ticker = $.clock.every(1000, () => $.ui.invalidate('ui.render'))
+    if (!active && ticker) {
+      ticker.cancel()
+      ticker = undefined
+    }
+  } catch {
+    // a timer is a courtesy
+  }
 }
 
 async function listWorktrees($: Engine): Promise<string | undefined> {
@@ -183,14 +199,14 @@ async function load($: Engine, now: number): Promise<void> {
     if (!card) continue
     const sig = live.get(wt.path)
     const runState = await readRunState($, card.key)
-    rows.push({
-      ...card,
-      runState,
-      light: deriveLight({ isWorking: sig?.isWorking ?? false, askPending: sig?.askPending ?? false, lastTurnFailed: sig?.lastTurnFailed ?? false, runState }),
-      sinceMs: sig?.sinceMs ?? now,
-    })
+    const light = deriveLight({ isWorking: sig?.isWorking ?? false, askPending: sig?.askPending ?? false, lastTurnFailed: sig?.lastTurnFailed ?? false, runState })
+    const seenKey = `${wt.path}|${light}`
+    if (!seen.has(seenKey)) seen.set(seenKey, now)
+    rows.push({ ...card, runState, light, sinceMs: sig?.sinceMs ?? (seen.get(seenKey) as number) })
   }
+  for (const k of [...seen.keys()]) if (!rows.some((r) => k === `${r.worktree}|${r.light}`)) seen.delete(k)
   cache.rows = rows
+  syncTicker($, rows)
   cache.disk = await readDisk($)
   void ensureJira($, now, rows.map((r) => r.key)) // background; never awaited here
 }
@@ -206,12 +222,6 @@ async function mark($: Engine, patch: Partial<{ isWorking: boolean; askPending: 
     note(`mark ${JSON.stringify(patch)} path=${path} cwd=${cwd}`)
     cache.at = -Infinity // a signal changed: reread on the next draw
     $.ui.invalidate('ui.render')
-    const working = [...live.values()].some((v) => v.isWorking)
-    if (working && !ticker) ticker = $.clock.every(1000, () => $.ui.invalidate('ui.render')) // the clock on a running card ticks
-    if (!working && ticker) {
-      ticker.cancel()
-      ticker = undefined
-    }
   } catch (err) {
     // A signal is a courtesy; it must never affect the turn or the tool.
     note(`mark failed ${JSON.stringify(patch)}: ${String(err).slice(0, 100)}`)
@@ -239,6 +249,7 @@ export function register(on: On, options?: PluginOptions) {
     // `reason` values beyond 'aborted' and 'refusal' are not enumerated here; anything error-like counts as failed.
     const reason = String((e as { reason?: unknown }).reason ?? '')
     const failed = reason === 'refusal' || reason.includes('error')
+    note(`turn.complete reason=${JSON.stringify(reason)} keys=${Object.keys(e as object).join(',')} failed=${failed}`)
     await mark($, { isWorking: false, askPending: false, lastTurnFailed: failed })
     return next(e)
   })
@@ -246,6 +257,7 @@ export function register(on: On, options?: PluginOptions) {
   // A permission ask is the red man: the engine's verdict is 'ask' until the person answers.
   on('tool.check', async ($, e, next) => {
     const verdict = await next(e)
+    note(`tool.check verdict=${JSON.stringify((verdict as { decision?: unknown }).decision)}`)
     if ((verdict as { decision?: unknown }).decision === 'ask') await mark($, { askPending: true })
     return verdict
   })
