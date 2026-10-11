@@ -6,15 +6,16 @@ const PORCELAIN =
   'worktree /r/.claude/worktrees/a\nHEAD def\nbranch refs/heads/CF1-195-devopsday-visuals\n'
 const DF = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/d 488245288 400000000 77594624 84% /\n'
 
-interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number }
+interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number }
 
 function stubs(on: any, setup: Setup = {}) {
   const files = setup.files ?? {}
   const registered: string[] = []
   const panes: string[] = []
   let worktreeCalls = 0
+  const jiraCalls: string[] = []
   mock.clock(on)
-  on('env.get', (_: any, e: any) => ({ value: e.name === 'HOME' ? '/home/u' : undefined }))
+  on('env.get', (_: any, e: any) => ({ value: e.name === 'HOME' ? '/home/u' : setup.env?.[e.name] }))
   on('session.cwd', () => ({ value: CWD }))
   on('fs.exists', (_: any, e: any) => ({ value: e.path in files }))
   on('fs.read', (_: any, e: any) => {
@@ -26,6 +27,7 @@ function stubs(on: any, setup: Setup = {}) {
     if (cmd === 'git' && a === 'worktree' && ++worktreeCalls > (setup.worktreeOkCalls ?? Infinity)) throw new Error('aborted')
     if (cmd === 'git' && a === 'worktree') return { value: { exitCode: 0, stdout: setup.porcelain ?? PORCELAIN, stderr: '' } }
     if (cmd === 'git' && a === 'rev-parse' && b === '--show-toplevel') return { value: { exitCode: 0, stdout: CWD + '\n', stderr: '' } }
+    if (cmd === 'uv') { jiraCalls.push(e.argv.join(' ')); return { value: { exitCode: setup.jiraExit ?? 0, stdout: setup.jiraOut ?? '', stderr: setup.jiraExit ? 'Jira API error 401' : '' } } }
     if (cmd === 'df') return { value: { exitCode: 0, stdout: DF, stderr: '' } }
     return { value: { exitCode: 127, stdout: '', stderr: '' } }
   })
@@ -40,7 +42,7 @@ function stubs(on: any, setup: Setup = {}) {
   on('session.start', () => ({ cwd: CWD }))
   on('turn.start', (_: any, e: any) => ({ turnId: e.turnId }))
   on('turn.complete', (_: any, e: any) => ({ text: e.answer ?? '' }))
-  return { registered, panes }
+  return { registered, panes, jiraCalls }
 }
 
 const walkman = ($: any, args: string): Promise<{ text: string }> => $.command.run({ command: 'walkman', args })
@@ -122,6 +124,39 @@ test('debug prints the signal state', async ($, on) => {
   const out = (await walkman($, 'debug')).text
   expect(out).toContain('Walkman debug')
   expect(out).toContain('CF1-195')
+})
+
+const JIRA_ENV = { WALKMAN_JIRA_PROJECT: 'CF1', WALKMAN_SYMPHONY_WORKFLOW_DIR: '/sw' }
+const JIRA_OUT = 'CF1-195\tIn Progress\tDevOpsDays visuals\nCF1-200\tIn Progress\tPitch copy refresh\n\n2 total\n'
+
+test('with a Jira project set, the board shows titles and the in-progress cards that have no worktree', async ($, on) => {
+  const s = stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT })
+  const out = (await walkman($, 'board')).text
+  expect(out).toContain('DevOpsDays visuals') // CF1-195 has a worktree: its title replaces the slug
+  expect(out).toContain('In progress in Jira')
+  expect(out).toContain('CF1-200') // in progress in Jira, no worktree
+  expect(s.jiraCalls[0]).toContain('symphony-workflow search')
+  expect(s.jiraCalls[0]).toContain('project = CF1')
+  expect(s.jiraCalls[0]).toContain('key in (CF1-195)')
+})
+
+test('a failing Jira lookup never breaks the board', async ($, on) => {
+  stubs(on, { env: JIRA_ENV, jiraExit: 1 })
+  const out = (await walkman($, 'board')).text
+  expect(out).toContain('CF1-195') // the worktree card still shows
+  expect(out).toContain('jira lookup: exit 1')
+})
+
+test('without a Jira project the plugin never runs symphony-workflow', async ($, on) => {
+  const s = stubs(on)
+  await walkman($, 'board')
+  expect(s.jiraCalls).toEqual([])
+})
+
+test('the Jira lookup only ever searches: no write verb is in what it runs', async ($, on) => {
+  const s = stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT })
+  await walkman($, 'board')
+  for (const call of s.jiraCalls) expect(call).not.toMatch(/transition|comment|create|rollup|add-subtasks|call /)
 })
 
 test('pane opens and closes', async ($, on) => {

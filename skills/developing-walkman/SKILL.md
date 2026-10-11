@@ -26,7 +26,7 @@ Core checks live in `checks/*.check.ts` on purpose: `claude plugin test` loads e
 - `core/*.ts` is **pure**: no `$`, no I/O, no clock reads. Time and files are passed in.
 - `hooks/register.ts` is the **only** file that calls the mods API. Write calls in full (`$.ns.method`), event names as string literals, helpers taking `$` as top-level functions in that file (`validate` enforces this).
 - `Svg` is a leaf: call the constructor directly, not through `h()` (which adds an empty `children` the engine refuses).
-- Never write to Jira, symphony-workflow run files or any repo. Never add a network call or a key.
+- Never write to Jira, symphony-workflow run files or any repo. Never add a network call of the plugin's own or a key. The one allowed outside read is `symphony-workflow search` (core/jira.ts builds its JQL from validated pieces, and a test asserts no write verb is ever run); keep it in the background and cached.
 - Every signal path is best effort: a failing signal must not change a turn or a tool result (`mark()` and `refresh()` swallow errors by design).
 - A card = a git worktree whose branch matches `KEY-n[-slug]` (`core/card.ts`). Do not add per-project config for this.
 

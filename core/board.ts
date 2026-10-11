@@ -1,4 +1,5 @@
 import type { CardRow, Disk, Light } from './contracts.ts'
+import type { JiraIssue } from './jira.ts'
 
 const GLYPH: Record<Light, string> = { walking: '🟢', waiting: '🔴', failed: '🔴', done: '✓ ', idle: '○ ' }
 const LABEL: Record<Light, string> = { walking: 'running', waiting: 'needs you', failed: 'failed', done: 'done', idle: 'idle' }
@@ -27,13 +28,23 @@ export function renderBand(rows: readonly CardRow[], now: number): string {
   return `${GLYPH[lead.light]} ${lead.key} ${LABEL[lead.light]} ${formatElapsed(now - lead.sinceMs)}${more}`
 }
 
-export function renderBoard(rows: readonly CardRow[], disk: Disk | undefined, now: number): string[] {
+export const OTHERS_MAX = 6
+
+// Cut to n characters with an ellipsis, so a cut title does not look like a typo.
+export const clip = (text: string, n: number): string => ([...text].length <= n ? text : [...text].slice(0, n - 1).join('') + '…')
+
+export function renderBoard(rows: readonly CardRow[], disk: Disk | undefined, now: number, others: readonly JiraIssue[] = []): string[] {
   const lines = rows.map((r) => {
-    const slug = r.slug === '' ? '' : r.slug.slice(0, 28)
+    const slug = clip(r.title ?? r.slug, 28)
     const state = r.runState ?? LABEL[r.light]
     return `${GLYPH[r.light]} ${r.key.padEnd(9)} ${slug.padEnd(28)} ${state.padEnd(13)} ${r.light === 'idle' ? '' : formatElapsed(now - r.sinceMs)}`
   })
-  if (rows.length === 0) lines.push('No card branch found. Work in a CF1-<n>-<slug> branch to light a card.')
+  if (rows.length === 0) lines.push('No card branch found. Work in a KEY-<n>-<slug> branch to light a card.')
+  if (others.length > 0) {
+    lines.push('', 'In progress in Jira')
+    for (const i of others.slice(0, OTHERS_MAX)) lines.push(`  ${i.key.padEnd(9)} ${clip(i.summary, 40).padEnd(40)} ${i.status}`)
+    if (others.length > OTHERS_MAX) lines.push(`  +${others.length - OTHERS_MAX} more`)
+  }
   if (disk) lines.push('', `disk · ${disk.freeGb} GB free · ${disk.usedPct}% used`)
   lines.push('', summary(rows))
   return lines

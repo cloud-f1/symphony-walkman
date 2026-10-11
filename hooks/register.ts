@@ -6,6 +6,8 @@ import { cardFromBranch, parseWorktrees } from '../core/card.ts'
 import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf } from '../core/disk.ts'
 import { renderBoard } from '../core/board.ts'
+import { buildJql, mergeJira, parseSearch } from '../core/jira.ts'
+import type { JiraIssue } from '../core/jira.ts'
 import { HELP, LEGEND, plain, stylePane, styleBand } from '../core/style.ts'
 import type { Line, Tone } from '../core/style.ts'
 import { signalSvg } from '../core/svg.ts'
@@ -64,6 +66,73 @@ async function readDisk($: Engine): Promise<Disk | undefined> {
 }
 
 let inflight: Promise<void> | undefined
+
+// Optional, read only Jira lookup through `symphony-workflow search` (settings jira_project and
+// symphony_workflow_dir). It runs in the background and is cached, so a draw never waits for it.
+const JIRA_MS = 60_000
+const JIRA_RETRY_MS = 300_000
+const jira: { at: number; keys: string; issues: JiraIssue[]; error?: string; inflight?: Promise<void> } = { at: -Infinity, keys: '', issues: [] }
+
+// The project is per repo, so WALKMAN_JIRA_PROJECT (set in the repo's .claude/settings.json env) wins over the
+// plugin setting; the symphony-workflow folder is per person, so the setting is the usual place for it.
+async function jiraSettings($: Engine): Promise<{ project: string; dir: string }> {
+  const project = ((await $.env.get('WALKMAN_JIRA_PROJECT')) || option('jira_project', '')).trim()
+  const dir = await expandHome($, (await $.env.get('WALKMAN_SYMPHONY_WORKFLOW_DIR')) || option('symphony_workflow_dir', ''))
+  return { project, dir }
+}
+
+async function fetchJira($: Engine, keys: string[]): Promise<void> {
+  let settings: { project: string; dir: string }
+  try {
+    settings = await jiraSettings($)
+  } catch (err) {
+    jira.error = 'settings: ' + String(err).slice(0, 100) // a background read must never reject
+    jira.at = Date.now()
+    return
+  }
+  const { project, dir } = settings
+  const jql = buildJql(project, keys)
+  if (jql === undefined || dir === '') {
+    jira.issues = []
+    jira.error = project === '' ? undefined : 'jira_project or symphony_workflow_dir is not valid'
+    return
+  }
+  try {
+    // Fixed arguments; the only variable part is the JQL built from validated pieces. A search never writes.
+    const run = await $.process.run(['uv', 'run', '--env-file', '.env', 'symphony-workflow', 'search', jql], { cwd: dir, timeoutMs: 20000 })
+    if (run.exitCode === 0) {
+      jira.issues = parseSearch(run.stdout)
+      jira.error = undefined
+    } else {
+      jira.error = `exit ${run.exitCode}: ${(run.stderr || run.stdout).trim().slice(0, 100)}`
+    }
+  } catch (err) {
+    jira.error = 'threw: ' + String(err).slice(0, 100)
+  }
+  jira.keys = keys.join(',')
+  jira.at = await $.clock.now()
+  try {
+    $.ui.invalidate('ui.render')
+  } catch {
+    // a redraw is a courtesy
+  }
+}
+
+// Starts a lookup when one is due (new cards, or the cache is old); returns the running one, if any.
+function ensureJira($: Engine, now: number, keys: string[]): Promise<void> | undefined {
+  if (jira.inflight) return jira.inflight
+  const due = jira.keys !== keys.join(',') || now - jira.at >= (jira.error ? JIRA_RETRY_MS : JIRA_MS)
+  if (!due) return undefined
+  jira.inflight = fetchJira($, keys).finally(() => {
+    jira.inflight = undefined
+  })
+  return jira.inflight
+}
+
+// What the board draws: worktree cards with their titles, and the Jira cards that have no worktree.
+function view(): { rows: CardRow[]; others: JiraIssue[] } {
+  return mergeJira(cache.rows, jira.issues)
+}
 let lastBand = ''
 let renders = 0
 let ticker: { cancel: () => void } | undefined
@@ -122,6 +191,7 @@ async function load($: Engine, now: number): Promise<void> {
   }
   cache.rows = rows
   cache.disk = await readDisk($)
+  void ensureJira($, now, rows.map((r) => r.key)) // background; never awaited here
 }
 
 // Mark the session's current worktree. Unknown (non-card) worktrees are ignored by refresh().
@@ -196,7 +266,7 @@ export function register(on: On, options?: PluginOptions) {
     }
     if (sub === 'debug') {
       await refresh($)
-      return { text: ['Walkman debug', `rows: ${cache.rows.map((r) => r.key + ':' + r.light + '@' + r.worktree).join(', ') || '(none)'}`, `live: ${[...live.entries()].map(([k, v]) => k + '=' + JSON.stringify(v)).join('; ') || '(none)'}`, `read: ${cache.why ?? '(none)'}`, `band renders: ${renders}`, ...trace].join('\n') }
+      return { text: ['Walkman debug', `rows: ${cache.rows.map((r) => r.key + ':' + r.light + '@' + r.worktree).join(', ') || '(none)'}`, `live: ${[...live.entries()].map(([k, v]) => k + '=' + JSON.stringify(v)).join('; ') || '(none)'}`, `read: ${cache.why ?? '(none)'}`, `band renders: ${renders}`, `jira: ${jira.issues.length} issues, last read ${jira.at === -Infinity ? 'never' : 'ok'}${jira.error ? ', error ' + jira.error : ''}`, ...trace].join('\n') }
     }
     if (sub === 'help') return { text: ['Walkman', HELP, plain(LEGEND)].join('\n') }
     if (sub === 'pane' && arg === 'close') {
@@ -213,15 +283,18 @@ export function register(on: On, options?: PluginOptions) {
       // /walkman with no room for a pane: fall through to the printed board.
     }
     await refresh($)
+    if (jira.at === -Infinity) await ensureJira($, await $.clock.now(), cache.rows.map((r) => r.key)) // first board: wait once so titles show
     // The host puts "<plugin>:" in front of the first line, so a header line keeps the rows aligned.
-    const lines = renderBoard(cache.rows, cache.disk, await $.clock.now())
-    return { text: ['Walkman board', ...lines, ...(cache.rows.length === 0 && cache.why ? ['(no card: ' + cache.why + ')'] : []), '', plain(LEGEND)].join('\n') }
+    const v = view()
+    const lines = renderBoard(v.rows, cache.disk, await $.clock.now(), v.others)
+    return { text: ['Walkman board', ...lines, ...(cache.rows.length === 0 && cache.why && !/ git=0\b/.test(cache.why) ? ['(could not read git: ' + cache.why + ')'] : []), ...(jira.error ? ['(jira lookup: ' + jira.error + ')'] : []), '', plain(LEGEND)].join('\n') }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     await refresh($)
-    const lines = stylePane(cache.rows, cache.disk, await $.clock.now())
+    const v = view()
+    const lines = stylePane(v.rows, cache.disk, await $.clock.now(), v.others)
     return h(Box, { flexDirection: 'column', paddingX: 1 }, ...lines.map((line) => styled(Box as never, Text as never, line))) as RenderElement
   })
 

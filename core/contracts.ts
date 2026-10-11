@@ -16,6 +16,8 @@ export type CardRow = Card & {
   light: Light
   runState?: RunState
   sinceMs: number // when the light last changed (epoch ms)
+  title?: string // from the optional Jira lookup
+  jiraStatus?: string
 }
 
 export type Disk = { freeGb: number; usedPct: number }
