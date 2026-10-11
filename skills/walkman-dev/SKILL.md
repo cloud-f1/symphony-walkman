@@ -3,7 +3,7 @@ name: walkman-dev
 description: Contributor rules for the symphony-walkman repo itself (architecture rules, test commands, honesty rules). Use when editing core/, hooks/register.ts, tests or the README of symphony-walkman.
 ---
 
-
+# symphony-walkman contributor rules
 
 ## What this is
 
