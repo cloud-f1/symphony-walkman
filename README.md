@@ -171,4 +171,6 @@ npm test            # core checks (node --test, with the strip-types flag) then 
 claude plugin validate --strict .
 ```
 
+Picking the project up? Read [docs/HANDOVER.md](docs/HANDOVER.md) (links, ticket map, decisions, gotchas). To check behavior the way a person sees it, use the real-session harness in [tools/real-session](tools/real-session/README.md).
+
 `core/*.ts` is pure. `hooks/register.ts` is the only file that calls the mods API. See [skills/developing-walkman/SKILL.md](skills/developing-walkman/SKILL.md) and [docs/PLAN.md](docs/PLAN.md).
