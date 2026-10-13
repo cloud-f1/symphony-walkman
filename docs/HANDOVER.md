@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.5.3` here; `v0.5.0` … `v0.5.3` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.5.3` here; `v0.5.0` … `v0.9.3` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -25,7 +25,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 | Plugin | Repo | Marketplace add | Install |
 |---|---|---|---|
 | `symphony-walkman` (this repo) | <https://github.com/cloud-f1/symphony-walkman> (`git@github.com:cloud-f1/symphony-walkman.git`) | `/plugin marketplace add cloud-f1/symphony-walkman` | `/plugin install symphony-walkman@symphony-walkman` (brings `symphony-workflow-ops` too) |
-| `symphony-workflow-ops` | <https://github.com/cloud-f1/symphony-workflow> (plugin in `plugin/`, v0.5.3) | `/plugin marketplace add cloud-f1/symphony-workflow` | `/plugin install symphony-workflow-ops@symphony-workflow-marketplace` |
+| `symphony-workflow-ops` | <https://github.com/cloud-f1/symphony-workflow> (plugin in `plugin/`, v0.9.3) | `/plugin marketplace add cloud-f1/symphony-workflow` | `/plugin install symphony-workflow-ops@symphony-workflow-marketplace` |
 | `jev-agent-kit` (a Mod, the template this plugin followed) | <https://github.com/cloud-f1/jev-agent-kit> (v0.8.0, Jira project JEV) | see its README | see its README |
 
 Do not install `symphony-workflow-ops` from both marketplaces; one copy is enough.
@@ -34,7 +34,7 @@ Do not install `symphony-workflow-ops` from both marketplaces; one copy is enoug
 
 > Read `docs/HANDOVER.md` in cloud-f1/symphony-walkman, then `docs/HANDOVER.md` in cloud-f1/symphony-workflow. Jira goes through
 > the `symphony-workflow` CLI (project WALK here, ADLC there), never a Jira MCP server. Start with `/walkman doctor` in the
-> repo you work in. Open items: WALK-23 (look at the figure in Claude Desktop), WALK-30 (Windows), SW_REF still pins symphony-workflow v0.5.2 (v0.5.3 exists; read what changed first), ADLC-142, ADLC-146.
+> repo you work in. Open items: WALK-23 (look at the figure in Claude Desktop), WALK-30 (Windows), the next symphony-workflow release (check `search` still prints three TAB columns before moving the pin), ADLC-142, ADLC-146.
 > Use a worktree per ticket and verify in a real session, not only the stubs.
 
 ## Map of the code
@@ -109,8 +109,8 @@ Docker was removed so nothing remains there.
 |---|---|
 | WALK-20 / WALK-23 | Look at the figure in Claude Desktop. |
 | WALK-30 | Windows (disk line and paths). |
-| Pin | `SW_REF` in `core/version.ts` and `SW_GIT` in the CLI still say symphony-workflow v0.5.2; bump both together after reading the v0.5.3 notes. |
-| CI | There is no GitHub Actions workflow, so the README has no CI badge (it would be false). Adding one that runs `npm test` and `claude plugin validate --strict .` would allow it. |
+| Pin | `SW_REF` in `core/version.ts` and `SW_GIT` in the CLI say symphony-workflow v0.9.3 (moved from v0.5.2 on 2026-10-14 after `search` printed the same three TAB columns on both). Bump both together, and run a real-session lookup. |
+| CI | `.github/workflows/ci.yml` runs the core checks, `claude plugin test` and `claude plugin validate --strict .` on pushes to main and on pull requests (first green run 2026-10-14, PR #20). The README CI badge shows the `main` branch, so it reads green after the first merge. |
 | WALK-27, 28, 31 | Ideas, not committed: per-subagent rows, a five-step progress bar from the run state. |
 | ADLC-54 | No Sub-tasks (needs its plan from the owner). |
 | Companion repo | Idea: read credentials from `~/.config/symphony-workflow/.env` when no variables are set; make `claude-agent-sdk` optional (about 95 MB for read-only commands); `ruff format` would change 13 files. |

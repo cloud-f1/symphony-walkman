@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Core checks
+        run: node --experimental-strip-types --test checks/*.check.ts
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Mod tests (stubbed host)
+        run: claude plugin test
+      - name: Validate the plugin
+        run: claude plugin validate --strict .
