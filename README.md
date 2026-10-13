@@ -1,10 +1,17 @@
 # Symphony Walkman
 
+[![Version](https://img.shields.io/github/v/tag/cloud-f1/symphony-walkman?label=version&sort=semver&color=2ea043)](https://github.com/cloud-f1/symphony-walkman/tags)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2ea043)](LICENSE)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-%E2%89%A5%202.1.287-d97757)](https://claude.com/claude-code)
+[![Plugin type](https://img.shields.io/badge/plugin-native%20Mod-1f6feb)](https://code.claude.com/docs/en/plugins-reference)
+[![Node](https://img.shields.io/badge/setup%20CLI-Node%20%E2%89%A5%2018-5fa04e)](cli/walkman.mjs)
+[![Jira](https://img.shields.io/badge/Jira-read--only-0052cc)](#what-it-will-not-do)
+
 A [Claude Code](https://claude.com/claude-code) plugin (a native Mod) that answers one question at a glance: **which card is Claude working on right now?** It works in the terminal and in Claude Desktop, and draws a pedestrian signal like the ones on Taiwanese crossings.
 
 Unofficial community project. MIT licensed.
 
-> **Status: v0.1.0, early.** The pure logic is unit-tested and the Mod passes `claude plugin test` and `claude plugin validate --strict` against stubbed hosts. It has **not** yet been run in a real interactive session, and the Desktop drawing has never been seen on a real screen. See [What is verified](#what-is-verified).
+> **Status: v0.5, in use.** Checked in real interactive terminal sessions (pane, band, permission ask, failed turn, Jira lookup through `uvx`, `doctor`, one install for both plugins). **Not yet checked:** the drawings inside Claude Desktop itself (WALK-23) and Windows (WALK-30). Every claim and its date is in [What is verified](#what-is-verified).
 
 ## The signal
 
@@ -163,6 +170,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | `plan_ready` lighting red from a real `run.json` | Passed in a real session (`WALKMAN_RUNS_DIR` pointing at a folder with `WALK-22/run.json` in `plan_ready`): the band showed `🔴 WALK-22 needs you`, the board row said `plan_ready`, and its clock advanced |
 | Fewer repeated reads in 0.5.2 (real session, scratch repo with two card worktrees, one Bash tool call, 2026-10-14) | Passed: compared with 0.5.1 in the same steps, `/walkman debug` showed one fewer `mark {"askPending":false}` at the tool call, and with no Jira project set `jira: 0 issues, last read ok` instead of `last read never`. **Not seen in a real session:** the 30-second disk cache (a stubbed test covers it: one `df` over four rereads) |
 | Setup CLI and doctor in 0.5.3 (real CLI, real `grep --color=always` output as a credentials file with dummy values, and a real session, 2026-10-14) | Passed: `doctor` in the CLI and `/walkman doctor` in a real session both said the file has terminal color codes and printed the `perl` command; running it left no escape bytes and `uv` parsed the file. `card KEY-n` with no slug ran none of `claude`, `uv`, `uvx` (it ran all three in 0.5.1). The token never appeared on screen (0 occurrences). **Not run:** `setup` copying credentials from an old clone (a stubbed check covers `pickJiraEnv`) |
+| Docs and skills in 0.5.4 (2026-10-14) | Checked: the six badge URLs return an SVG (the version badge reads the latest tag), `claude plugin validate --strict .` passes. Documentation only; no behavior change, so no new real-session run |
 | Windows | **Not run**: no Windows machine. The disk line is skipped there and paths are untested |
 
 ## Develop

@@ -49,4 +49,15 @@ Core checks live in `checks/*.check.ts` on purpose: `claude plugin test` loads e
 
 ## The setup CLI
 
-`cli/walkman.mjs` (plain ESM, no dependencies, Node 18+ so `npx` runs it anywhere) has `doctor`, `setup` and `card`. Keep it that way: it must never print a credential (read `.env` for names only), must show a plan and ask before changing anything, and must refuse to overwrite a settings file it cannot parse. Its pure parts are tested in `checks/cli.check.ts`.
+`cli/walkman.mjs` (plain ESM, no dependencies, Node 18+ so `npx` runs it anywhere) has `doctor`, `setup`, `card` and `version`. Keep it that way: it must never print a credential (read `.env` for names only), must show a plan and ask before changing anything, and must refuse to overwrite a settings file it cannot parse. Its pure parts are tested in `checks/cli.check.ts`.
+
+## Lessons from real sessions (keep these true)
+
+- Text a command returns is drawn as Markdown: a backslash before `[` is eaten, so a copy-paste command shown to the person must not rely on `\[` (write `[[]` in a regex instead).
+- Mod tests read `VERSION` from `core/version.ts`; never write the version as a literal in a test.
+- Compare against the released version in the same real-session steps (`--plugin-dir` of `main` versus the branch) when a change is meant to remove work: `/walkman debug` shows the trace of marks and reads.
+- A fresh Claude Code can show an auto-mode onboarding dialog that swallows the next slash command; send Esc twice before `/walkman debug` in a scripted session.
+- `git worktree add ... origin/main` sets the new branch to track `origin/main`; push with `git push -u origin <branch>` so it tracks its own branch.
+- Two tickets in flight both bump the version and add a README row, so the second one conflicts. Merge in version order, then rebase: keep the higher version and both README rows.
+- Do not merge a pull request, tag or push without the owner's go-ahead for that step; the permission system also blocks a merge that has no review.
+- A credentials file must never be written by a `grep` that colors its output (`--color=always` puts escape bytes in the file and uv then fails to parse it).
