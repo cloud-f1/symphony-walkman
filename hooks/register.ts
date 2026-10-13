@@ -19,11 +19,12 @@ const PANE_ID = 'walkman-pane'
 const SETUP_COMMAND = 'npx --yes github:cloud-f1/symphony-walkman setup'
 const DEFAULT_ENV_FILE = '~/.config/symphony-workflow/.env'
 const REFRESH_MS = 3000 // draws can repeat often; reread git / files at most this often
+const DISK_MS = 30_000 // free space moves slowly: reread it far less often than the cards
 
 // Session-local state. Resets on reload.
 let pluginOptions: Record<string, unknown> = {}
 const live = new Map<string, { isWorking: boolean; askPending: boolean; lastTurnFailed: boolean; sinceMs: number }>()
-const cache: { at: number; rows: CardRow[]; disk?: Disk; why?: string } = { at: -Infinity, rows: [] }
+const cache: { at: number; rows: CardRow[]; disk?: Disk; diskAt: number; why?: string } = { at: -Infinity, rows: [], diskAt: -Infinity }
 
 function option(name: string, fallback: string): string {
   const v = pluginOptions[name]
@@ -113,6 +114,12 @@ async function fetchJira($: Engine, keys: string[]): Promise<void> {
   if (jql === undefined) {
     jira.issues = []
     jira.error = project === '' ? undefined : 'jira_project is not a valid project key'
+    try {
+      jira.keys = keys.join(',') // recorded, so the next draw does not start the same empty lookup again
+      jira.at = await $.clock.now()
+    } catch {
+      // a clock read must not reject a background lookup
+    }
     return
   }
   try {
@@ -241,7 +248,10 @@ async function load($: Engine, now: number): Promise<void> {
   for (const k of [...seen.keys()]) if (!rows.some((r) => k === `${r.worktree}|${r.light}`)) seen.delete(k)
   cache.rows = rows
   syncTicker($, rows)
-  cache.disk = await readDisk($)
+  if (now - cache.diskAt >= DISK_MS || now < cache.diskAt) {
+    cache.disk = await readDisk($)
+    cache.diskAt = now
+  }
   void ensureJira($, now, rows.map((r) => r.key)) // background; never awaited here
 }
 
@@ -327,7 +337,9 @@ export function register(on: On, options?: PluginOptions) {
   })
 
   on('tool.call', async ($, e, next) => {
-    await mark($, { askPending: false }) // a call running means the ask was answered
+    // a call running means the ask was answered; with no ask pending there is nothing to clear, and
+    // marking would spawn git and force a full reread for every tool call
+    if ([...live.values()].some((v) => v.askPending)) await mark($, { askPending: false })
     return next(e)
   })
 
