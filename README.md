@@ -1,5 +1,6 @@
 # Symphony Walkman
 
+[![CI](https://github.com/cloud-f1/symphony-walkman/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/cloud-f1/symphony-walkman/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/github/v/tag/cloud-f1/symphony-walkman?label=version&sort=semver&color=2ea043)](https://github.com/cloud-f1/symphony-walkman/tags)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea043)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-%E2%89%A5%202.1.287-d97757)](https://claude.com/claude-code)

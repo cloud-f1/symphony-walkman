@@ -110,7 +110,7 @@ Docker was removed so nothing remains there.
 | WALK-20 / WALK-23 | Look at the figure in Claude Desktop. |
 | WALK-30 | Windows (disk line and paths). |
 | Pin | `SW_REF` in `core/version.ts` and `SW_GIT` in the CLI say symphony-workflow v0.9.3 (moved from v0.5.2 on 2026-10-14 after `search` printed the same three TAB columns on both). Bump both together, and run a real-session lookup. |
-| CI | There is no GitHub Actions workflow, so the README has no CI badge (it would be false). Adding one that runs `npm test` and `claude plugin validate --strict .` would allow it. |
+| CI | `.github/workflows/ci.yml` runs the core checks, `claude plugin test` and `claude plugin validate --strict .` on pushes to main and on pull requests (first green run 2026-10-14, PR #20). The README CI badge shows the `main` branch, so it reads green after the first merge. |
 | WALK-27, 28, 31 | Ideas, not committed: per-subagent rows, a five-step progress bar from the run state. |
 | ADLC-54 | No Sub-tasks (needs its plan from the owner). |
 | Companion repo | Idea: read credentials from `~/.config/symphony-workflow/.env` when no variables are set; make `claude-agent-sdk` optional (about 95 MB for read-only commands); `ruff format` would change 13 files. |
