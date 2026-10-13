@@ -1,4 +1,4 @@
-# Handover (state at v0.5.1, 2026-10-12)
+# Handover (state at v0.5.1, refreshed 2026-10-13)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,11 +14,28 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.5.1` here; `v0.5.0` … `v0.5.2` there |
+| Releases | tags `v0.1.1` … `v0.5.1` here; `v0.5.0` … `v0.5.3` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
 | Claude Code docs used | plugins reference <https://code.claude.com/docs/en/plugins-reference>, plugin dependencies <https://code.claude.com/docs/en/plugin-dependencies> |
+
+## Plugin repos (all public, MIT)
+
+| Plugin | Repo | Marketplace add | Install |
+|---|---|---|---|
+| `symphony-walkman` (this repo) | <https://github.com/cloud-f1/symphony-walkman> (`git@github.com:cloud-f1/symphony-walkman.git`) | `/plugin marketplace add cloud-f1/symphony-walkman` | `/plugin install symphony-walkman@symphony-walkman` (brings `symphony-workflow-ops` too) |
+| `symphony-workflow-ops` | <https://github.com/cloud-f1/symphony-workflow> (plugin in `plugin/`, v0.5.3) | `/plugin marketplace add cloud-f1/symphony-workflow` | `/plugin install symphony-workflow-ops@symphony-workflow-marketplace` |
+| `jev-agent-kit` (a Mod, the template this plugin followed) | <https://github.com/cloud-f1/jev-agent-kit> (v0.8.0, Jira project JEV) | see its README | see its README |
+
+Do not install `symphony-workflow-ops` from both marketplaces; one copy is enough.
+
+## Start a new session (paste this)
+
+> Read `docs/HANDOVER.md` in cloud-f1/symphony-walkman, then `docs/HANDOVER.md` in cloud-f1/symphony-workflow. Jira goes through
+> the `symphony-workflow` CLI (project WALK here, ADLC there), never a Jira MCP server. Start with `/walkman doctor` in the
+> repo you work in. Open items: WALK-23 (look at the figure in Claude Desktop), WALK-30 (Windows), ADLC-142, ADLC-146.
+> Use a worktree per ticket and verify in a real session, not only the stubs.
 
 ## Map of the code
 
