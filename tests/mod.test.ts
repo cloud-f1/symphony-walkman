@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import { VERSION } from '../core/version.ts'
 
 const CWD = '/r/.claude/worktrees/a'
 const PORCELAIN =
@@ -15,6 +16,7 @@ function stubs(on: any, setup: Setup = {}) {
   let worktreeCalls = 0
   const jiraCalls: string[] = []
   const jiraEnvs: Record<string, string>[] = []
+  const counts = { revParse: 0, df: 0 }
   mock.clock(on)
   on('env.get', (_: any, e: any) => ({ value: e.name === 'HOME' ? '/home/u' : setup.env?.[e.name] }))
   on('session.cwd', () => ({ value: CWD }))
@@ -27,10 +29,12 @@ function stubs(on: any, setup: Setup = {}) {
     const [cmd, a, b] = e.argv
     if (cmd === 'git' && a === 'worktree' && ++worktreeCalls > (setup.worktreeOkCalls ?? Infinity)) throw new Error('aborted')
     if (cmd === 'git' && a === 'worktree') return { value: { exitCode: 0, stdout: setup.porcelain ?? PORCELAIN, stderr: '' } }
+    if (cmd === 'git' && a === 'rev-parse' && b === '--show-toplevel') counts.revParse++
     if (cmd === 'git' && a === 'rev-parse' && b === '--show-toplevel') return { value: { exitCode: 0, stdout: CWD + '\n', stderr: '' } }
     if (cmd === 'uv' || cmd === 'uvx') { jiraCalls.push(e.argv.join(' ')); if (e.init?.env) jiraEnvs.push(e.init.env); return { value: { exitCode: setup.jiraExit ?? 0, stdout: setup.jiraOut ?? '', stderr: setup.jiraExit ? 'Jira API error 401' : '' } } }
     if (cmd === 'claude') return { value: { exitCode: 0, stdout: '2.1.296 (Claude Code)\n', stderr: '' } }
     if (cmd === 'uvx' && a === '--version') return { value: { exitCode: 0, stdout: 'uvx 0.9\n', stderr: '' } }
+    if (cmd === 'df') counts.df++
     if (cmd === 'df') return { value: { exitCode: 0, stdout: DF, stderr: '' } }
     return { value: { exitCode: 127, stdout: '', stderr: '' } }
   })
@@ -45,7 +49,7 @@ function stubs(on: any, setup: Setup = {}) {
   on('session.start', () => ({ cwd: CWD }))
   on('turn.start', (_: any, e: any) => ({ turnId: e.turnId }))
   on('turn.complete', (_: any, e: any) => ({ text: e.answer ?? '' }))
-  return { registered, panes, jiraCalls, jiraEnvs }
+  return { registered, panes, jiraCalls, jiraEnvs, counts }
 }
 
 const walkman = ($: any, args: string): Promise<{ text: string }> => $.command.run({ command: 'walkman', args })
@@ -209,7 +213,7 @@ test('a missing credentials file says where it looked and never runs anything', 
 test('/walkman version prints the plugin version, the symphony-workflow release and Claude Code', async ($, on) => {
   stubs(on)
   const out = (await walkman($, 'version')).text
-  expect(out).toContain('symphony-walkman 0.5.1')
+  expect(out).toContain('symphony-walkman ' + VERSION)
   expect(out).toContain('symphony-workflow v')
   expect(out).toContain('Claude Code 2.1.296')
 })
@@ -296,4 +300,29 @@ test('a permission ask lights the red man until a tool runs', async ($, on) => {
   expect((await walkman($, 'board')).text).toContain('needs you')
   await ($ as any).tool.call({ tool: 'Bash', command: 'ls' })
   expect((await walkman($, 'board')).text).not.toContain('needs you  ')
+})
+
+test('a tool call with no permission ask pending does not respawn git or force a reread', async ($, on) => {
+  const s = stubs(on)
+  on('tool.call', () => ({ result: {}, text: 'ok' }))
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const before = s.counts.revParse
+  for (let i = 0; i < 3; i++) await ($ as any).tool.call({ tool: 'Bash', command: 'ls' })
+  expect(s.counts.revParse).toBe(before)
+})
+
+test('the disk reading is reused while signals force the cards to be reread', async ($, on) => {
+  const s = stubs(on)
+  await walkman($, 'board')
+  for (let i = 0; i < 3; i++) {
+    await $.turn.start({ text: 'go', turnId: 't' + i })
+    await walkman($, 'board')
+  }
+  expect(s.counts.df).toBe(1)
+})
+
+test('with no Jira project set the lookup is recorded as done, so it is not restarted on every reread', async ($, on) => {
+  stubs(on)
+  await walkman($, 'board')
+  expect((await walkman($, 'debug')).text).not.toContain('last read never')
 })
