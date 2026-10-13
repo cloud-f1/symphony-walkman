@@ -4,7 +4,7 @@ import { LEGEND, plain, progressBar, styleBand, stylePane, styleBoard } from '..
 import { renderBoard } from '../core/board.ts'
 import type { CardRow } from '../core/contracts.ts'
 import { buildJql, mergeJira, parseSearch } from '../core/jira.ts'
-import { doctorLines, envNames } from '../core/doctor.ts'
+import { doctorLines, envNames, hasAnsi } from '../core/doctor.ts'
 
 const row = (over: Partial<CardRow>): CardRow => ({ key: 'CF1-195', slug: 'devopsday-visuals', branch: 'CF1-195-devopsday-visuals', worktree: '/w', light: 'walking', sinceMs: 0, ...over })
 
@@ -102,4 +102,13 @@ test('doctor lines: credentials from plugin settings, partial settings, and what
   const partial = doctorLines({ ...base, settingsCreds: 'partial:URL+email' }).join('\n')
   assert.ok(partial.includes('incomplete (set: URL, email; need URL, email and token)'))
   assert.ok(doctorLines({ ...base, settingsCreds: 'none' }).join('\n').includes('no credentials file'))
+})
+
+test('doctor says so when the credentials file holds terminal color codes', () => {
+  const colored = '\u001b[01;31m\u001b[KJIRA_BASE_URL\u001b[m\u001b[K=https://x.atlassian.net\n'
+  assert.ok(hasAnsi(colored) && !hasAnsi('JIRA_BASE_URL=https://x\n'))
+  const base = { project: 'JEV', cloneDir: '', envFile: '/c/.env', envNames: envNames(colored), envHasAnsi: true, uvx: true, settingsCreds: 'none', cardCount: 1, jiraError: undefined, jiraCount: undefined, setupCommand: 'npx x setup' }
+  const text = doctorLines(base).join('\n')
+  assert.match(text, /color codes/)
+  assert.ok(!text.includes('is missing JIRA_BASE_URL'))
 })

@@ -326,3 +326,9 @@ test('with no Jira project set the lookup is recorded as done, so it is not rest
   await walkman($, 'board')
   expect((await walkman($, 'debug')).text).not.toContain('last read never')
 })
+
+test('/walkman doctor says so when the credentials file holds color codes', async ($, on) => {
+  stubs(on, { env: { WALKMAN_JIRA_PROJECT: 'CF1' }, files: { '/home/u/.config/symphony-workflow/.env': '\u001b[01;31m\u001b[KJIRA_BASE_URL\u001b[m\u001b[K=https://x.atlassian.net\n' } })
+  const out = (await walkman($, 'doctor')).text
+  expect(out).toContain('color codes')
+})
