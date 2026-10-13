@@ -1,4 +1,4 @@
-# Handover (state at v0.5.1, refreshed 2026-10-13)
+# Handover (state at v0.5.3, refreshed 2026-10-14)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.5.1` here; `v0.5.0` … `v0.5.3` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.5.3` here; `v0.5.0` … `v0.5.3` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -34,7 +34,7 @@ Do not install `symphony-workflow-ops` from both marketplaces; one copy is enoug
 
 > Read `docs/HANDOVER.md` in cloud-f1/symphony-walkman, then `docs/HANDOVER.md` in cloud-f1/symphony-workflow. Jira goes through
 > the `symphony-workflow` CLI (project WALK here, ADLC there), never a Jira MCP server. Start with `/walkman doctor` in the
-> repo you work in. Open items: WALK-23 (look at the figure in Claude Desktop), WALK-30 (Windows), ADLC-142, ADLC-146.
+> repo you work in. Open items: WALK-23 (look at the figure in Claude Desktop), WALK-30 (Windows), SW_REF still pins symphony-workflow v0.5.2 (v0.5.3 exists; read what changed first), ADLC-142, ADLC-146.
 > Use a worktree per ticket and verify in a real session, not only the stubs.
 
 ## Map of the code
@@ -82,12 +82,19 @@ Verified in real sessions (details and dates in the README table): pane and band
 ask, a failed turn (`reason="error"`), `plan_ready`, the Jira lookup through `uvx`, `doctor`, `version`, one install bringing
 both plugins, setup end to end from GitHub in an isolated profile.
 
-Not verified: the signal drawings inside Claude Desktop itself (WALK-23; they render correctly in a browser engine), Windows
+Also verified in real sessions since 0.5.1 (README table has the details): fewer repeated reads in 0.5.2 (one fewer `mark` per tool call, compared with 0.5.1 in the same steps) and the color-code message in `doctor` in 0.5.3. The plugin is installed at user scope on the owner's machine with auto-update on (`extraKnownMarketplaces.symphony-walkman.autoUpdate` in `~/.claude/settings.json`).
+
+Not verified: a later release actually arriving through auto-update (the first installed copy was updated by hand from 0.4.0 to 0.5.3), the signal drawings inside Claude Desktop itself (WALK-23; they render correctly in a browser engine), Windows
 (WALK-30), reading the three Jira plugin settings from secure storage in a real session (the environment route is verified),
 Docker was removed so nothing remains there.
 
 ## Gotchas that cost time
 
+- A Claude Code session started under a long-running `herdr server` that was not launched from the normal login session lost the user database: `id` printed no name, `ssh` failed with `No user exists for uid 502`, so every `git fetch` over SSH failed while another terminal worked. Restarting `herdr` from a normal terminal fixed it.
+- A credentials file written by `grep --color=always` holds escape bytes and uv says only `Failed to parse environment file`; `/walkman doctor` and the CLI `doctor` now name this.
+- Text a command returns is drawn as Markdown, so a `\[` in a copy-paste command loses its backslash; use `[[]`.
+- Two tickets in flight conflict on the version lines and the README table; merge in version order and rebase the second.
+- Creating Jira Stories: pass `parent` (not `epic`) and `assignee_account_id` at creation; see the `tracking-walk-tickets` skill.
 - `$.env.get` needs a literal name; `claude plugin validate` rejects a variable.
 - Plugin tests cannot set plugin options, so the same settings are also readable from env vars (that is how they are tested).
 - `scripts/release.sh` in symphony-workflow tags the current commit: run it after the merge, never before.
@@ -102,6 +109,8 @@ Docker was removed so nothing remains there.
 |---|---|
 | WALK-20 / WALK-23 | Look at the figure in Claude Desktop. |
 | WALK-30 | Windows (disk line and paths). |
+| Pin | `SW_REF` in `core/version.ts` and `SW_GIT` in the CLI still say symphony-workflow v0.5.2; bump both together after reading the v0.5.3 notes. |
+| CI | There is no GitHub Actions workflow, so the README has no CI badge (it would be false). Adding one that runs `npm test` and `claude plugin validate --strict .` would allow it. |
 | WALK-27, 28, 31 | Ideas, not committed: per-subagent rows, a five-step progress bar from the run state. |
 | ADLC-54 | No Sub-tasks (needs its plan from the owner). |
 | Companion repo | Idea: read credentials from `~/.config/symphony-workflow/.env` when no variables are set; make `claude-agent-sdk` optional (about 95 MB for read-only commands); `ruff format` would change 13 files. |
