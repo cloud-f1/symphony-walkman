@@ -1,11 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 // @ts-ignore the CLI is plain ESM JavaScript
-import { SW_GIT, atLeast, branchFor, inferProject, lookupJql, mergeEnvSetting, missingEnv, parseEnvNames, planSetup, pluginInstalled, searchCommand, slugify, worktreeDirFor, writeSetting } from '../cli/walkman.mjs'
+import { SW_GIT, atLeast, branchFor, hasAnsi, inferProject, pickJiraEnv, lookupJql, mergeEnvSetting, missingEnv, parseEnvNames, planSetup, pluginInstalled, searchCommand, slugify, worktreeDirFor, writeSetting } from '../cli/walkman.mjs'
 
 const CLI = new URL('../cli/walkman.mjs', import.meta.url).pathname
 const sh = (cwd: string, ...args: string[]) => spawnSync('git', args, { cwd, encoding: 'utf8' })
@@ -135,4 +135,43 @@ test('the CLI runs when started through a symlink (how npx and npm link start it
   const r = spawnSync('node', [link, 'help'], { encoding: 'utf8' })
   assert.equal(r.status, 0)
   assert.match(r.stdout, /symphony-walkman setup CLI/)
+})
+
+test('migrating credentials copies only the three Jira variables, never the rest of the file', () => {
+  const text = 'SYMPHONY_WORKFLOW_TARGET_REPO=/some/repo\nJIRA_BASE_URL=https://x.atlassian.net\n# note\nexport JIRA_EMAIL=me@x.com\nJIRA_API_TOKEN="tok"\nOTHER_SECRET=nope\n'
+  const out = pickJiraEnv(text)
+  assert.equal(out, 'JIRA_BASE_URL=https://x.atlassian.net\nexport JIRA_EMAIL=me@x.com\nJIRA_API_TOKEN="tok"\n')
+  assert.ok(!out.includes('OTHER_SECRET') && !out.includes('TARGET_REPO'))
+  assert.equal(pickJiraEnv('FOO=1\n'), '')
+})
+
+test('terminal color codes in a credentials file are detected', () => {
+  assert.ok(hasAnsi('\u001b[01;31m\u001b[KJIRA_BASE_URL\u001b[m\u001b[K=https://x'))
+  assert.ok(!hasAnsi('JIRA_BASE_URL=https://x.atlassian.net\n'))
+})
+
+test('doctor names color codes in the credentials file instead of saying it is missing', () => {
+  const dir = repoWith(['init'])
+  const env = join(dir, 'colored.env')
+  writeFileSync(env, '\u001b[01;31m\u001b[KJIRA_BASE_URL\u001b[m\u001b[K=https://x.atlassian.net\n')
+  const r = spawnSync('node', [CLI, 'doctor', '--json', '--repo', dir, '--creds', env], { encoding: 'utf8' })
+  const list = JSON.parse(r.stdout) as { level: string; text: string; fix: string }[]
+  const hit = list.find((c) => c.text.includes('color codes'))
+  assert.ok(hit, r.stdout)
+  assert.equal(hit.level, 'bad')
+  assert.match(hit.fix, /perl -pi/)
+  assert.ok(!list.some((c) => c.text.startsWith('no Jira credentials file')))
+})
+
+test('card without a slug does not run the full doctor survey (claude, uvx) just to look up a title', () => {
+  const dir = repoWith(['init'])
+  const bin = tmp()
+  const marker = join(bin, 'ran')
+  for (const name of ['claude', 'uv', 'uvx']) {
+    writeFileSync(join(bin, name), `#!/bin/sh\necho ${name} >> ${marker}\nexit 1\n`)
+    chmodSync(join(bin, name), 0o755)
+  }
+  const r = spawnSync('node', [CLI, 'card', 'JEV-47', '--repo', dir, '--creds', join(dir, 'nope.env')], { encoding: 'utf8', env: { ...process.env, PATH: bin + ':' + process.env.PATH } })
+  assert.equal(r.status, 0, r.stderr + r.stdout)
+  assert.ok(!existsSync(marker), 'card must not call claude, uv or uvx when there are no credentials to use')
 })

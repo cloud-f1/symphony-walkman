@@ -7,7 +7,7 @@ import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf } from '../core/disk.ts'
 import { renderBoard } from '../core/board.ts'
 import { buildJql, mergeJira, parseSearch } from '../core/jira.ts'
-import { doctorLines, envNames } from '../core/doctor.ts'
+import { doctorLines, envNames, hasAnsi } from '../core/doctor.ts'
 import { SW_GIT, SW_REF, VERSION } from '../core/version.ts'
 import type { JiraIssue } from '../core/jira.ts'
 import { HELP, LEGEND, plain, stylePane, styleBand } from '../core/style.ts'
@@ -287,8 +287,11 @@ async function doctorText($: Engine): Promise<string> {
   await refresh($)
   const { project, dir, envFile } = await jiraSettings($)
   let names: Record<string, boolean> | undefined
+  let ansi = false
   try {
-    names = (await $.fs.exists(envFile)) ? envNames(await $.fs.read(envFile)) : undefined
+    const text = (await $.fs.exists(envFile)) ? await $.fs.read(envFile) : undefined
+    names = text === undefined ? undefined : envNames(text)
+    ansi = text !== undefined && hasAnsi(text)
   } catch {
     names = undefined
   }
@@ -299,7 +302,7 @@ async function doctorText($: Engine): Promise<string> {
     uvx = false
   }
   const { creds, set } = await jiraCreds($)
-  return ['Walkman doctor', ...doctorLines({ project, cloneDir: dir, envFile, envNames: names, uvx, settingsCreds: creds ? 'complete' : set.length > 0 ? 'partial:' + set.join('+') : 'none', cardCount: cache.rows.length, jiraError: jira.error, jiraCount: jira.at === -Infinity ? undefined : jira.issues.length, setupCommand: SETUP_COMMAND })].join('\n')
+  return ['Walkman doctor', ...doctorLines({ project, cloneDir: dir, envFile, envNames: names, envHasAnsi: ansi, uvx, settingsCreds: creds ? 'complete' : set.length > 0 ? 'partial:' + set.join('+') : 'none', cardCount: cache.rows.length, jiraError: jira.error, jiraCount: jira.at === -Infinity ? undefined : jira.issues.length, setupCommand: SETUP_COMMAND })].join('\n')
 }
 
 export function register(on: On, options?: PluginOptions) {

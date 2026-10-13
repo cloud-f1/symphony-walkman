@@ -2,6 +2,9 @@
 // It only ever sees variable NAMES from a credentials file, never their values.
 export const REQUIRED_ENV = ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_TOKEN'] as const
 
+// Terminal color codes in an env file (a `grep` run with --color=always writes them): uv cannot parse such a file.
+export const hasAnsi = (text: string): boolean => /\x1b\[[0-9;]*[A-Za-z]/.test(text)
+
 export function envNames(text: string): Record<string, boolean> {
   const out: Record<string, boolean> = {}
   for (const line of text.split('\n')) {
@@ -16,6 +19,7 @@ export type DoctorFacts = {
   cloneDir: string // '' when the released CLI is used through uvx
   envFile: string
   envNames: Record<string, boolean> | undefined // undefined: the file does not exist
+  envHasAnsi?: boolean // the file holds terminal color codes
   uvx: boolean
   settingsCreds: string // 'complete', 'none' or 'partial:URL+email'
   cardCount: number
@@ -37,6 +41,7 @@ export function doctorLines(f: DoctorFacts): string[] {
         out.push(f.envNames === undefined ? `! the ticket skills and the CLI read ${f.envFile}, which does not exist yet: run ${f.setupCommand} if you want them to work too` : `✓ credentials file ${f.envFile} exists too, for the ticket skills and the CLI`)
       } else if (f.settingsCreds.startsWith('partial:')) out.push(`✗ the plugin's Jira settings are incomplete (set: ${f.settingsCreds.slice(8).split('+').join(', ')}; need URL, email and token)`)
       else if (f.envNames === undefined) out.push(`✗ no credentials file at ${f.envFile}: run ${f.setupCommand}`)
+      else if (f.envHasAnsi) out.push(`✗ credentials file ${f.envFile} has terminal color codes, so uv cannot read it: run perl -pi -e 's/\\e[[][0-9;]*[mK]//g' ${f.envFile}`)
       else {
         const missing = REQUIRED_ENV.filter((n) => !f.envNames?.[n])
         out.push(missing.length === 0 ? `✓ credentials file ${f.envFile} has ${REQUIRED_ENV.join(', ')} (values not shown)` : `✗ credentials file ${f.envFile} is missing ${missing.join(', ')}`)

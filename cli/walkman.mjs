@@ -3,7 +3,7 @@
 // Plain ESM with no dependencies, so `npx` can run it on any Node >= 18 (the Mod itself is TypeScript).
 // It never prints a credential: .env files are read for variable NAMES only.
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -65,6 +65,15 @@ export function parseEnvNames(text) {
 
 export const missingEnv = (names) => REQUIRED_ENV.filter((n) => !names[n])
 
+// Terminal color codes in an env file (a `grep` run with --color=always writes them): uv fails to parse such a file.
+export const hasAnsi = (text) => /\x1b\[[0-9;]*[A-Za-z]/.test(String(text))
+
+// Only the three Jira variables from an env text, lines kept as written; nothing else in the file is carried over.
+export function pickJiraEnv(text) {
+  const keep = new RegExp(`^\\s*(?:export\\s+)?(${REQUIRED_ENV.join('|')})\\s*=`)
+  return String(text).split('\n').filter((line) => keep.test(line)).map((line) => line + '\n').join('')
+}
+
 export function atLeast(version, min) {
   const a = String(version).replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0)
   const b = String(min).split('.').map((n) => parseInt(n, 10) || 0)
@@ -97,7 +106,7 @@ export function planSetup(s) {
     steps.push({ id: 'plugin', title: 'Install the symphony-workflow-ops skills plugin', run: [['claude', ['plugin', 'marketplace', 'update', 'symphony-walkman']], ['claude', ['plugin', 'install', SW_PLUGIN]]] })
   }
   if (!s.envFilled) {
-    if (s.migrateFrom) steps.push({ id: 'migrate', title: `Copy the Jira credentials from ${s.migrateFrom}/.env to ${s.envFile} (mode 600; values are not shown)` })
+    if (s.migrateFrom) steps.push({ id: 'migrate', title: `Copy only ${REQUIRED_ENV.join(', ')} from ${s.migrateFrom}/.env to ${s.envFile} (mode 600; values are not shown)` })
     else steps.push({ id: 'env', title: `Create ${s.envFile} (mode 600) for the Jira credentials (you fill in the values)`, manual: true })
   }
   if (s.uv && !s.uvxWarm) steps.push({ id: 'warm', title: 'Download the symphony-workflow CLI once (about 95 MB) so lookups are fast', run: [['uvx', ['--from', SW_GIT, 'symphony-workflow', '--help']]] })
@@ -150,15 +159,25 @@ export function findSwClone(repo, hint) {
   return ''
 }
 
+// Where the Jira credentials are and whether they are complete. Reads one env file; never returns a value.
+export function credsInfo(repo, flags) {
+  const configured = settingOf(repo, 'WALKMAN_SYMPHONY_WORKFLOW_DIR')
+  const legacyDir = flags['sw-dir'] ? resolve(flags['sw-dir']) : configured ? resolve(configured) : ''
+  const envFile = resolve(flags.creds || settingOf(repo, 'WALKMAN_JIRA_ENV_FILE') || DEFAULT_ENV_FILE)
+  const file = legacyDir ? join(legacyDir, '.env') : envFile
+  const raw = existsSync(file) ? readFileSync(file, 'utf8') : ''
+  const names = parseEnvNames(raw)
+  const credsPresent = Object.keys(names).length > 0
+  return { legacyDir, envFile, names, credsPresent, envHasAnsi: hasAnsi(raw), envFilled: credsPresent && missingEnv(names).length === 0 }
+}
+
 function gather(repo, flags) {
   const git = run('git', ['rev-parse', '--show-toplevel'], { cwd: repo })
   const root = git.ok ? git.out.trim() : ''
   const claude = run('claude', ['--version'])
   const list = claude.ok ? run('claude', ['plugin', 'list']).out : ''
-  const legacyDir = flags['sw-dir'] ? resolve(flags['sw-dir']) : (settingOf(repo, 'WALKMAN_SYMPHONY_WORKFLOW_DIR') ? resolve(settingOf(repo, 'WALKMAN_SYMPHONY_WORKFLOW_DIR')) : '')
-  const envFile = resolve(flags.creds || settingOf(repo, 'WALKMAN_JIRA_ENV_FILE') || DEFAULT_ENV_FILE)
+  const { legacyDir, envFile, names, credsPresent, envHasAnsi } = credsInfo(repo, flags)
   const textOf = (f) => (existsSync(f) ? readFileSync(f, 'utf8') : '')
-  const names = parseEnvNames(legacyDir ? textOf(join(legacyDir, '.env')) : textOf(envFile))
   const clone = legacyDir || findSwClone(repo, '')
   const cloneFilled = clone && missingEnv(parseEnvNames(textOf(join(clone, '.env')))).length === 0
   const texts = []
@@ -168,7 +187,6 @@ function gather(repo, flags) {
   }
   const worktrees = root ? run('git', ['worktree', 'list', '--porcelain'], { cwd: root }).out : ''
   const uv = !run('uv', ['--version']).missing
-  const credsPresent = Object.keys(names).length > 0
   return {
     repo, root, isRepo: git.ok,
     node: process.versions.node,
@@ -177,7 +195,7 @@ function gather(repo, flags) {
     swPluginInstalled: pluginInstalled(list, 'symphony-workflow-ops'),
     uv, // cached runs answer in about 2s; a cold download is much slower, so a short timeout tells them apart
     uvxWarm: uv && run('uvx', ['--from', SW_GIT, 'symphony-workflow', '--help'], { timeout: 12000 }).ok,
-    legacyDir, envFile, credsPresent,
+    legacyDir, envFile, credsPresent, envHasAnsi,
     envMissing: credsPresent ? missingEnv(names) : REQUIRED_ENV, envFilled: credsPresent && missingEnv(names).length === 0,
     migrateFrom: !legacyDir && !existsSync(envFile) && cloneFilled ? clone : '',
     projectSetting: settingOf(repo, 'WALKMAN_JIRA_PROJECT'),
@@ -215,7 +233,8 @@ export function checks(s, withLookup) {
   add(s.walkmanInstalled ? 'ok' : 'warn', s.walkmanInstalled ? 'symphony-walkman plugin installed' : 'symphony-walkman plugin not installed (fine if you load it with --plugin-dir)', 'claude plugin marketplace add cloud-f1/symphony-walkman && claude plugin install symphony-walkman@symphony-walkman')
   add(s.swPluginInstalled ? 'ok' : 'warn', s.swPluginInstalled ? 'symphony-workflow-ops plugin installed' : 'symphony-workflow-ops plugin not installed', 'run: npx --yes github:cloud-f1/symphony-walkman setup')
   add(s.uv ? 'ok' : 'bad', s.uv ? 'uv installed' : 'uv not found', 'install uv: https://docs.astral.sh/uv/')
-  add(s.envFilled ? 'ok' : 'warn', s.envFilled ? `Jira credentials file: ${s.legacyDir ? join(s.legacyDir, '.env') : s.envFile} (values not shown)` : s.credsPresent ? `Jira credentials file ${s.envFile} is missing: ${s.envMissing.join(', ')}` : `no Jira credentials file at ${s.envFile}${s.migrateFrom ? ` (setup can copy them from ${s.migrateFrom}/.env)` : ''}`, `run: npx --yes github:cloud-f1/symphony-walkman setup (an Atlassian API token: https://id.atlassian.com/manage-profile/security/api-tokens)`)
+  if (s.envHasAnsi) add('bad', `Jira credentials file ${s.legacyDir ? join(s.legacyDir, '.env') : s.envFile} has terminal color codes, so uv cannot read it`, `strip them: perl -pi -e 's/\\e[[][0-9;]*[mK]//g' ${s.legacyDir ? join(s.legacyDir, '.env') : s.envFile}`)
+  else add(s.envFilled ? 'ok' : 'warn', s.envFilled ? `Jira credentials file: ${s.legacyDir ? join(s.legacyDir, '.env') : s.envFile} (values not shown)` : s.credsPresent ? `Jira credentials file ${s.envFile} is missing: ${s.envMissing.join(', ')}` : `no Jira credentials file at ${s.envFile}${s.migrateFrom ? ` (setup can copy them from ${s.migrateFrom}/.env)` : ''}`, `run: npx --yes github:cloud-f1/symphony-walkman setup (an Atlassian API token: https://id.atlassian.com/manage-profile/security/api-tokens)`)
   if (!s.legacyDir) add(s.uvxWarm ? 'ok' : 'warn', s.uvxWarm ? 'symphony-workflow CLI is cached for uvx' : 'symphony-workflow CLI not downloaded yet (the first lookup will be slow)', 'run: npx --yes github:cloud-f1/symphony-walkman setup')
   add(s.projectSetting ? 'ok' : 'warn', s.projectSetting ? `WALKMAN_JIRA_PROJECT=${s.projectSetting}` : `WALKMAN_JIRA_PROJECT is not set${s.inferred ? ` (git history suggests ${s.inferred.project}, ${s.inferred.count} mentions)` : ''}`, 'run: npx --yes github:cloud-f1/symphony-walkman setup')
   if (withLookup && s.envFilled && s.project) {
@@ -283,9 +302,14 @@ async function cmdSetup(flags) {
     }
     if (st.id === 'migrate') {
       mkdirSync(dirname(s.envFile), { recursive: true })
-      copyFileSync(join(s.migrateFrom, '.env'), s.envFile)
+      const picked = pickJiraEnv(readFileSync(join(s.migrateFrom, '.env'), 'utf8'))
+      if (missingEnv(parseEnvNames(picked)).length > 0) {
+        console.error(`  ${s.migrateFrom}/.env does not hold all of ${REQUIRED_ENV.join(', ')}; nothing was copied`)
+        return 1
+      }
+      writeFileSync(s.envFile, picked, { mode: 0o600 })
       chmodSync(s.envFile, 0o600)
-      console.log(`  ✓ copied to ${s.envFile} (mode 600)`)
+      console.log(`  ✓ copied ${REQUIRED_ENV.join(', ')} to ${s.envFile} (mode 600)`)
     }
     if (st.id === 'env') {
       mkdirSync(dirname(s.envFile), { recursive: true })
@@ -316,7 +340,7 @@ async function cmdCard(flags, positionals) {
   const top = root.out.trim()
   let slug = rest.length > 0 ? slugify(rest.join(' ')) : ''
   if (!slug) {
-    const st = gather(top, flags)
+    const st = credsInfo(top, flags) // only the credentials file: no claude, plugin list or uvx survey for a title
     if (st.envFilled) {
       const [cmd, args, cwd] = searchCommand(st, `key = ${key}`)
       const r = run(cmd, args, { cwd, timeout: 120000 })
