@@ -49,7 +49,7 @@ Core checks live in `checks/*.check.ts` on purpose: `claude plugin test` loads e
 
 ## The setup CLI
 
-`cli/walkman.mjs` (plain ESM, no dependencies, Node 18+ so `npx` runs it anywhere) has `doctor`, `setup`, `card` and `version`. Keep it that way: it must never print a credential (read `.env` for names only), must show a plan and ask before changing anything, and must refuse to overwrite a settings file it cannot parse. Its pure parts are tested in `checks/cli.check.ts`.
+`cli/walkman.mjs` (plain ESM, no dependencies, Node 18+ so `npx` runs it anywhere) has `doctor`, `setup`, `configure` (every repo in a folder), `card` and `version`. Keep it that way: it must never print a credential (read `.env` for names only), must show a plan and ask before changing anything, and must refuse to overwrite a settings file it cannot parse. Its pure parts are tested in `checks/cli.check.ts`.
 
 ## Lessons from real sessions (keep these true)
 
@@ -61,3 +61,7 @@ Core checks live in `checks/*.check.ts` on purpose: `claude plugin test` loads e
 - Two tickets in flight both bump the version and add a README row, so the second one conflicts. Merge in version order, then rebase: keep the higher version and both README rows.
 - Do not merge a pull request, tag or push without the owner's go-ahead for that step; the permission system also blocks a merge that has no review.
 - A credentials file must never be written by a `grep` that colors its output (`--color=always` puts escape bytes in the file and uv then fails to parse it).
+- A `KEY-n` in git history is a guess: `BUG-12`, `HF-1`, `P2-3` are not Jira projects. `configure` applies a guess only when a read-only search finds issues in it; a project that does not exist answers exit 0 and `0 total`, so check the count, not the exit code.
+- The CLI checks must run with the `WALKMAN_*` variables removed from the environment (`cleanEnv()`); a machine that has `WALKMAN_JIRA_PROJECT` set otherwise changes what `doctor` and `setup` report.
+- Try a new CLI command with `--dry-run` on the real folder of repos before trusting it: the first version of `configure` planned five wrong projects that a scratch repo could not show.
+- A repo that is only scanned (`configure`) is untrusted input: its `.claude/settings*.json` must not choose which clone is run (`uv run` builds the project it runs in), which credentials file is read, or be printed unless the value is a valid project key. Only the repo you run the command in (`doctor`, `setup`, `card`) may supply those settings.

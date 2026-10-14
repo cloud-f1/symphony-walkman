@@ -107,6 +107,18 @@ npx --yes github:cloud-f1/symphony-walkman setup     # shows a plan, asks, then 
 npx --yes github:cloud-f1/symphony-walkman card JEV-47   # worktree + branch JEV-47-<title> for a card
 ```
 
+### Many repos at once: `configure`
+
+The Jira project is a per-repo setting (`WALKMAN_JIRA_PROJECT`); the credentials are per person. To set the project in every repo under a folder in one go:
+
+```bash
+cd your-repo                                           # the folder that holds your repos is used (or pass --root)
+npx --yes github:cloud-f1/symphony-walkman configure --dry-run    # prints the plan, changes nothing
+npx --yes github:cloud-f1/symphony-walkman configure --yes --set my-repo=ABC
+```
+
+It keeps a project that is already set, and for the others it reads the `KEY-n` that appears most in git history, **but uses the guess only if Jira has issues in that project** (`BUG-12` or `P2-3` are not projects), so a repo is never configured on a guess Jira does not confirm; use `--set repo=KEY` for those, or `--no-verify` to trust git history. It writes `.claude/settings.local.json` (not committed; `--shared` writes `settings.json` instead), turns on auto-update for the marketplace in your Claude user settings, and reports a global plugin option `jira_project`, which would give every repo without its own setting that project (`--drop-global-project` removes it). Nothing is written before you confirm, and it never prints a credential.
+
 `setup` does, in order, only what is missing: installs the plugin (its marketplace also installs the `symphony-workflow-ops` skills, see Install), creates `~/.config/symphony-workflow/.env` (mode 600) for your Jira credentials, or copies them from an older symphony-workflow clone if it finds one, downloads the symphony-workflow CLI once (about 95 MB) so lookups are fast, writes `WALKMAN_JIRA_PROJECT` to the repo's `.claude/settings.json` (guessed from your git history, or `--project JEV`), then runs the Jira lookup to prove it works. It never asks for or prints a token, never writes to Jira, and `--dry-run` shows the plan without changing anything. Restart Claude Code afterwards. This CLI is separate from the plugin: the plugin only reads, the CLI writes settings after showing you a plan.
 
 ## Install
@@ -173,6 +185,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | Setup CLI and doctor in 0.5.3 (real CLI, real `grep --color=always` output as a credentials file with dummy values, and a real session, 2026-10-14) | Passed: `doctor` in the CLI and `/walkman doctor` in a real session both said the file has terminal color codes and printed the `perl` command; running it left no escape bytes and `uv` parsed the file. `card KEY-n` with no slug ran none of `claude`, `uv`, `uvx` (it ran all three in 0.5.1). The token never appeared on screen (0 occurrences). **Not run:** `setup` copying credentials from an old clone (a stubbed check covers `pickJiraEnv`) |
 | Docs and skills in 0.5.4 (2026-10-14) | Checked: the six badge URLs return an SVG (the version badge reads the latest tag), `claude plugin validate --strict .` passes. Documentation only; no behavior change, so no new real-session run |
 | Jira lookup through symphony-workflow v0.9.3 (real session, scratch repo with a `WALK-107-…` worktree, 2026-10-14) | Passed: `/walkman board` showed the card with its Jira title and `/walkman debug` said `jira: 1 issues, last read ok`; `search` printed the same three TAB columns on v0.5.2 and v0.9.3. The pin in `core/version.ts` and the CLI was moved to v0.9.3 |
+| `walkman configure` on the real folder of repos and the panel in a real session (2026-10-14) | Passed: a dry run over 75 repos kept the four projects already set, planned DCSYS and CF1 (found in Jira) and refused `BUG`, `HF`, `P2`, `SP`, `TICKET` (no issues in Jira, so not applied). In a real session with project RCPM and two worktree cards, the pane and `/walkman board` listed both cards and all four In Progress RCPM Stories (one with its Jira title as a card, three under "In progress in Jira"). **Not seen with real data:** the `+N more` line past six (the largest project has six In Progress; a stubbed check covers it). Note: the pane is narrow, so it shows keys without titles; `/walkman board` shows titles |
 | Windows | **Not run**: no Windows machine. The disk line is skipped there and paths are untested |
 
 ## Develop

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// symphony-walkman setup CLI: `doctor` checks, `setup` configures, `card` opens a card worktree.
+// symphony-walkman setup CLI: `doctor` checks, `setup` configures one repo, `configure` configures every repo in a folder, `card` opens a card worktree.
 // Plain ESM with no dependencies, so `npx` can run it on any Node >= 18 (the Mod itself is TypeScript).
 // It never prints a credential: .env files are read for variable NAMES only.
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -114,6 +114,69 @@ export function planSetup(s) {
   return steps
 }
 
+// ---------- configure: every repo in a folder (pure parts, tested) ----------
+
+const MARKETPLACE = 'symphony-walkman'
+const PLUGIN_KEY = 'symphony-walkman@symphony-walkman'
+
+// Both edits return a new object and keep every other key of the Claude user settings.
+export function withAutoUpdate(json) {
+  const markets = json?.extraKnownMarketplaces ?? {}
+  return { ...json, extraKnownMarketplaces: { ...markets, [MARKETPLACE]: { ...(markets[MARKETPLACE] ?? {}), autoUpdate: true } } }
+}
+
+export function withoutGlobalProject(json) {
+  const cfg = json?.pluginConfigs?.[PLUGIN_KEY]
+  if (!cfg?.options || !('jira_project' in cfg.options)) return json
+  const { jira_project: _dropped, ...options } = cfg.options
+  return { ...json, pluginConfigs: { ...json.pluginConfigs, [PLUGIN_KEY]: { ...cfg, options } } }
+}
+
+// Git repos directly under a folder (a worktree's `.git` file counts too).
+export function listRepos(root) {
+  try {
+    return readdirSync(root, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && existsSync(join(root, e.name, '.git')))
+      .map((e) => join(root, e.name))
+      .sort()
+  } catch {
+    return []
+  }
+}
+
+// What `configure` would do. A project that is already set is left alone unless --set names another one;
+// a global jira_project is reported, and removed only with --drop-global-project.
+export function planConfigure(f) {
+  const steps = []
+  const notes = []
+  const keep = []
+  const none = []
+  for (const r of f.repos) {
+    const project = r.override || r.current || (r.inferredOk ? r.inferred : '')
+    if (r.current && (!r.override || r.override === r.current)) {
+      keep.push(r.name)
+      continue
+    }
+    if (!project) {
+      // a KEY-n in git history is only a guess: BUG-12 or P2-3 are not Jira projects, so it is never applied unchecked
+      if (r.inferred) notes.push(`${r.name}: ${r.inferred} appears in git history but no Jira project ${r.inferred} with issues was found; if it is one, pass --set ${r.name}=${r.inferred}`)
+      else none.push(r.name)
+      continue
+    }
+    const why = r.override ? (r.current ? `given; was ${r.current}` : 'given') : 'from git history, found in Jira'
+    steps.push({ id: `repo:${r.name}`, title: `${r.name}: set WALKMAN_JIRA_PROJECT=${project} in .claude/${f.target} (${why})`, write: { file: join(r.path, '.claude', f.target), name: 'WALKMAN_JIRA_PROJECT', value: project } })
+  }
+  const g = f.global
+  if (g.marketplace === 'missing') notes.push(`the ${MARKETPLACE} marketplace is not in the Claude user settings; run: npx --yes github:cloud-f1/symphony-walkman setup`)
+  else if (g.autoUpdate !== true) steps.push({ id: 'autoupdate', title: `Turn on auto-update for the ${MARKETPLACE} marketplace (Claude user settings)`, global: 'autoUpdate' })
+  if (g.jiraProject) {
+    if (f.dropGlobalProject) steps.push({ id: 'drop-global-project', title: `Remove the global plugin option jira_project=${g.jiraProject} (every repo without its own setting would look up that project)`, global: 'dropProject' })
+    else notes.push(`global plugin option jira_project=${g.jiraProject} gives every repo without its own setting that project; add --drop-global-project to remove it`)
+  }
+  if (!g.credsOk) notes.push('no complete Jira credentials file yet; run: npx --yes github:cloud-f1/symphony-walkman setup')
+  return { steps, notes, keep, none }
+}
+
 // ---------- io helpers ----------
 
 const run = (cmd, args, opts = {}) => {
@@ -136,10 +199,14 @@ export function writeSetting(file, name, value) {
   writeFileSync(file, JSON.stringify(mergeEnvSetting(json, name, value), null, 2) + '\n')
 }
 
-const settingOf = (repo, name) => {
-  for (const f of ['settings.local.json', 'settings.json']) {
-    const v = readJson(join(repo, '.claude', f))?.env?.[name]
-    if (typeof v === 'string' && v !== '') return v
+// trustRepo is false when the repo is only being scanned: a repo you did not choose must not decide which clone gets
+// run or which credentials file is read, so only your own environment counts then.
+const settingOf = (repo, name, trustRepo = true) => {
+  if (trustRepo) {
+    for (const f of ['settings.local.json', 'settings.json']) {
+      const v = readJson(join(repo, '.claude', f))?.env?.[name]
+      if (typeof v === 'string' && v !== '') return v
+    }
   }
   return process.env[name] || ''
 }
@@ -160,10 +227,10 @@ export function findSwClone(repo, hint) {
 }
 
 // Where the Jira credentials are and whether they are complete. Reads one env file; never returns a value.
-export function credsInfo(repo, flags) {
-  const configured = settingOf(repo, 'WALKMAN_SYMPHONY_WORKFLOW_DIR')
+export function credsInfo(repo, flags, trustRepo = true) {
+  const configured = settingOf(repo, 'WALKMAN_SYMPHONY_WORKFLOW_DIR', trustRepo)
   const legacyDir = flags['sw-dir'] ? resolve(flags['sw-dir']) : configured ? resolve(configured) : ''
-  const envFile = resolve(flags.creds || settingOf(repo, 'WALKMAN_JIRA_ENV_FILE') || DEFAULT_ENV_FILE)
+  const envFile = resolve(flags.creds || settingOf(repo, 'WALKMAN_JIRA_ENV_FILE', trustRepo) || DEFAULT_ENV_FILE)
   const file = legacyDir ? join(legacyDir, '.env') : envFile
   const raw = existsSync(file) ? readFileSync(file, 'utf8') : ''
   const names = parseEnvNames(raw)
@@ -328,6 +395,116 @@ async function cmdSetup(flags) {
   return code
 }
 
+// ---------- configure: gathering and running ----------
+
+function projectIn(repo) {
+  for (const f of ['settings.local.json', 'settings.json']) {
+    const v = readJson(join(repo, '.claude', f))?.env?.WALKMAN_JIRA_PROJECT
+    if (typeof v === 'string' && PROJECT.test(v)) return v // a value from a scanned repo is shown on screen: only a valid key
+  }
+  return ''
+}
+
+// The folder that holds the repos: the parent of the repo you are in (also from inside one of its worktrees).
+function defaultRoot() {
+  const common = run('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+  return common.ok ? dirname(dirname(common.out.trim())) : process.cwd()
+}
+
+// A guessed project counts only when a read-only search finds issues in it (a missing project answers `0 total`).
+function jiraProjectHasIssues(creds, key) {
+  if (!creds.envFilled || !PROJECT.test(key)) return false
+  const [cmd, args, cwd] = searchCommand(creds, `project = ${key} ORDER BY key DESC`)
+  const r = run(cmd, args, { cwd, timeout: 120000 })
+  return r.ok && parseSearch(r.out).length > 0
+}
+
+function gatherConfigure(flags) {
+  const root = resolve(flags.root || defaultRoot())
+  const sets = {}
+  for (const kv of flags.set ?? []) {
+    const m = /^([^=]+)=([A-Z][A-Z0-9]{1,9})$/.exec(kv)
+    if (!m) throw new Error(`--set expects name=KEY (for example --set my-repo=ABC), got ${kv}`)
+    sets[m[1]] = m[2]
+  }
+  const creds = credsInfo(root, flags, false) // the scanned repos do not get to pick the credentials or the clone
+  const checked = new Map()
+  const exists = (key) => {
+    if (flags['no-verify']) return true
+    if (!checked.has(key)) checked.set(key, jiraProjectHasIssues(creds, key))
+    return checked.get(key)
+  }
+  const repos = listRepos(root).map((path) => {
+    const name = basename(path)
+    const current = projectIn(path)
+    const texts = [...run('git', ['log', '-n', '200', '--format=%s'], { cwd: path }).out.split('\n'), ...run('git', ['branch', '-a', '--format=%(refname:short)'], { cwd: path }).out.split('\n')]
+    const inferred = current || sets[name] ? '' : (inferProject(texts)?.project ?? '')
+    return { name, path, current, inferred, inferredOk: inferred !== '' && exists(inferred), override: sets[name] ?? '' }
+  })
+  const file = join(resolve(flags['claude-home'] || join(homedir(), '.claude')), 'settings.json')
+  const json = readJson(file)
+  if (json === undefined) throw new Error(`${file} is not valid JSON; fix it by hand, I will not overwrite it`)
+  return {
+    root, file, json, repos,
+    target: flags.shared ? 'settings.json' : 'settings.local.json',
+    dropGlobalProject: Boolean(flags['drop-global-project']),
+    global: {
+      marketplace: json.extraKnownMarketplaces?.[MARKETPLACE] ? 'present' : 'missing',
+      autoUpdate: json.extraKnownMarketplaces?.[MARKETPLACE]?.autoUpdate,
+      jiraProject: json.pluginConfigs?.[PLUGIN_KEY]?.options?.jira_project ?? '',
+      credsOk: creds.envFilled,
+    },
+  }
+}
+
+async function cmdConfigure(flags) {
+  let facts
+  try {
+    facts = gatherConfigure(flags)
+  } catch (err) {
+    console.error(String(err?.message ?? err))
+    return 1
+  }
+  if (facts.repos.length === 0) {
+    console.error(`No git repos directly under ${facts.root}. Pass --root with the folder that holds them.`)
+    return 1
+  }
+  const plan = planConfigure(facts)
+  console.log(`${facts.repos.length} git repos under ${facts.root}`)
+  const shown = facts.repos.filter((r) => flags.all || r.current || r.override || r.inferredOk)
+  for (const r of shown) {
+    const planned = r.override || r.current || (r.inferredOk ? r.inferred : '')
+    console.log(`  ${r.name.padEnd(30)} ${r.current && !(r.override && r.override !== r.current) ? `${r.current} (already set)` : planned ? `${planned} (planned)` : '-'}`)
+  }
+  if (plan.none.length > 0 && !flags.all) console.log(`  … ${plan.none.length} more with no Jira project found (list them with --all, set one with --set name=KEY)`)
+  if (plan.notes.length > 0) {
+    console.log('\nNotes:')
+    for (const n of plan.notes) console.log(`  ! ${n}`)
+  }
+  if (plan.steps.length === 0) {
+    console.log('\nNothing to change.')
+    return 0
+  }
+  console.log('\nConfigure plan:')
+  plan.steps.forEach((st, i) => console.log(`  ${i + 1}. ${st.title}`))
+  if (flags['dry-run']) return 0
+  if (!(await confirm('\nApply these changes?', flags.yes))) {
+    console.log(process.stdin.isTTY ? 'Nothing changed.' : 'Not a terminal: nothing changed. Re-run with --yes to apply.')
+    return 2
+  }
+  for (const st of plan.steps) {
+    if (st.write) writeSetting(st.write.file, st.write.name, st.write.value)
+    if (st.global) {
+      const next = st.global === 'autoUpdate' ? withAutoUpdate(facts.json) : withoutGlobalProject(facts.json)
+      writeFileSync(facts.file, JSON.stringify(next, null, 2) + '\n')
+      facts.json = next
+    }
+    console.log(`  ✓ ${st.title}`)
+  }
+  console.log('\nRestart Claude Code in each repo so the settings load. Check one with: npx --yes github:cloud-f1/symphony-walkman doctor --repo <path>')
+  return 0
+}
+
 async function cmdCard(flags, positionals) {
   const [key, ...rest] = positionals
   if (!key || !KEY.test(key)) {
@@ -373,6 +550,11 @@ const HELP = `symphony-walkman setup CLI
                          Jira lookup. Shows the plan first.
   version                print this CLI's version, the pinned symphony-workflow release and Node
   card KEY-123 [slug]    create .claude/worktrees/<key>-<slug> on branch KEY-123-<slug> (slug from Jira if empty)
+  configure [--root DIR] [--set repo=KEY]... [--shared] [--drop-global-project] [--no-verify] [--all] [--yes] [--dry-run]
+                         set WALKMAN_JIRA_PROJECT in every git repo under a folder (default: the folder that holds
+                         this repo; a project guessed from git history is used only if Jira has issues in it, unless
+                         --no-verify), turn on marketplace auto-update, and report a global jira_project. Writes
+                         .claude/settings.local.json (not committed; --shared writes settings.json). Shows the plan first.
 
 options: --repo PATH (default: current directory)
 
@@ -380,7 +562,7 @@ Run without installing:  npx --yes github:cloud-f1/symphony-walkman <command>
 It never prints a credential and never writes to Jira.`
 
 export async function main(argv) {
-  const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options: { repo: { type: 'string' }, project: { type: 'string' }, 'sw-dir': { type: 'string' }, creds: { type: 'string' }, yes: { type: 'boolean' }, 'dry-run': { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } })
+  const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options: { repo: { type: 'string' }, project: { type: 'string' }, 'sw-dir': { type: 'string' }, creds: { type: 'string' }, yes: { type: 'boolean' }, 'dry-run': { type: 'boolean' }, json: { type: 'boolean' }, root: { type: 'string' }, set: { type: 'string', multiple: true }, shared: { type: 'boolean' }, all: { type: 'boolean' }, 'no-verify': { type: 'boolean' }, 'drop-global-project': { type: 'boolean' }, 'claude-home': { type: 'string' }, help: { type: 'boolean', short: 'h' } } })
   const [cmd, ...rest] = positionals
   if (values.help || !cmd || cmd === 'help') return console.log(HELP), 0
   if (cmd === 'doctor') {
@@ -400,6 +582,7 @@ export async function main(argv) {
   }
   if (cmd === 'setup') return cmdSetup(values)
   if (cmd === 'card') return cmdCard(values, rest)
+  if (cmd === 'configure') return cmdConfigure(values)
   console.error(`unknown command: ${cmd}\n\n${HELP}`)
   return 1
 }
