@@ -199,10 +199,14 @@ export function writeSetting(file, name, value) {
   writeFileSync(file, JSON.stringify(mergeEnvSetting(json, name, value), null, 2) + '\n')
 }
 
-const settingOf = (repo, name) => {
-  for (const f of ['settings.local.json', 'settings.json']) {
-    const v = readJson(join(repo, '.claude', f))?.env?.[name]
-    if (typeof v === 'string' && v !== '') return v
+// trustRepo is false when the repo is only being scanned: a repo you did not choose must not decide which clone gets
+// run or which credentials file is read, so only your own environment counts then.
+const settingOf = (repo, name, trustRepo = true) => {
+  if (trustRepo) {
+    for (const f of ['settings.local.json', 'settings.json']) {
+      const v = readJson(join(repo, '.claude', f))?.env?.[name]
+      if (typeof v === 'string' && v !== '') return v
+    }
   }
   return process.env[name] || ''
 }
@@ -223,10 +227,10 @@ export function findSwClone(repo, hint) {
 }
 
 // Where the Jira credentials are and whether they are complete. Reads one env file; never returns a value.
-export function credsInfo(repo, flags) {
-  const configured = settingOf(repo, 'WALKMAN_SYMPHONY_WORKFLOW_DIR')
+export function credsInfo(repo, flags, trustRepo = true) {
+  const configured = settingOf(repo, 'WALKMAN_SYMPHONY_WORKFLOW_DIR', trustRepo)
   const legacyDir = flags['sw-dir'] ? resolve(flags['sw-dir']) : configured ? resolve(configured) : ''
-  const envFile = resolve(flags.creds || settingOf(repo, 'WALKMAN_JIRA_ENV_FILE') || DEFAULT_ENV_FILE)
+  const envFile = resolve(flags.creds || settingOf(repo, 'WALKMAN_JIRA_ENV_FILE', trustRepo) || DEFAULT_ENV_FILE)
   const file = legacyDir ? join(legacyDir, '.env') : envFile
   const raw = existsSync(file) ? readFileSync(file, 'utf8') : ''
   const names = parseEnvNames(raw)
@@ -396,7 +400,7 @@ async function cmdSetup(flags) {
 function projectIn(repo) {
   for (const f of ['settings.local.json', 'settings.json']) {
     const v = readJson(join(repo, '.claude', f))?.env?.WALKMAN_JIRA_PROJECT
-    if (typeof v === 'string' && v !== '') return v
+    if (typeof v === 'string' && PROJECT.test(v)) return v // a value from a scanned repo is shown on screen: only a valid key
   }
   return ''
 }
@@ -423,7 +427,7 @@ function gatherConfigure(flags) {
     if (!m) throw new Error(`--set expects name=KEY (for example --set my-repo=ABC), got ${kv}`)
     sets[m[1]] = m[2]
   }
-  const creds = credsInfo(listRepos(root)[0] ?? root, flags)
+  const creds = credsInfo(root, flags, false) // the scanned repos do not get to pick the credentials or the clone
   const checked = new Map()
   const exists = (key) => {
     if (flags['no-verify']) return true

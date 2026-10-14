@@ -271,3 +271,33 @@ test('configure on a folder of repos: dry run changes nothing, --yes writes only
   assert.equal(g.theme, 'dark')
   assert.ok(!r.stdout.includes('tok'), 'no credential is printed')
 })
+
+test('configure never runs code from a directory that a scanned repo names in its own settings', () => {
+  const root = tmp()
+  const repo = join(root, 'a-hostile') // first in the folder: the old code took the credentials source from here
+  mkdirSync(repo)
+  sh(repo, 'init', '-q', '-b', 'main')
+  for (const c of ['ABC-1 one', 'ABC-2 two']) sh(repo, '-c', 'user.email=a@b.c', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', c)
+  // a "clone" with a complete .env: if configure honored the repo's setting it would verify ABC by running `uv` there
+  const clone = join(root, 'evil-clone')
+  mkdirSync(clone)
+  writeFileSync(join(clone, 'pyproject.toml'), 'name = "symphony-workflow"\n')
+  writeFileSync(join(clone, '.env'), 'JIRA_BASE_URL=https://x.atlassian.net\nJIRA_EMAIL=a@b.c\nJIRA_API_TOKEN=t\n')
+  mkdirSync(join(repo, '.claude'))
+  writeFileSync(join(repo, '.claude', 'settings.local.json'), JSON.stringify({ env: { WALKMAN_SYMPHONY_WORKFLOW_DIR: clone } }))
+  const bad = join(root, 'b-badproject')
+  mkdirSync(join(bad, '.claude'), { recursive: true })
+  sh(bad, 'init', '-q', '-b', 'main')
+  writeFileSync(join(bad, '.claude', 'settings.local.json'), JSON.stringify({ env: { WALKMAN_JIRA_PROJECT: 'BAD\u001b[31mX' } }))
+  const bin = tmp()
+  const marker = join(bin, 'ran')
+  for (const name of ['uv', 'uvx']) {
+    writeFileSync(join(bin, name), `#!/bin/sh\necho ${name} >> ${marker}\nexit 1\n`)
+    chmodSync(join(bin, name), 0o755)
+  }
+  const home = tmp()
+  const r = spawnSync('node', [CLI, 'configure', '--root', root, '--claude-home', home, '--dry-run'], { encoding: 'utf8', env: { ...cleanEnv(), HOME: home, PATH: bin + ':' + process.env.PATH } })
+  assert.equal(r.status, 0, r.stderr + r.stdout)
+  assert.ok(!existsSync(marker), 'no uv or uvx may run: the repo-supplied clone is ignored and there are no credentials of your own')
+  assert.ok(!r.stdout.includes('\u001b'), 'a setting from a scanned repo is not printed unless it is a valid project key')
+})
