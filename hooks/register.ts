@@ -218,15 +218,24 @@ async function refresh($: Engine): Promise<void> {
   return inflight
 }
 
-// A card that is running, waiting or failed has a clock that must keep moving, so redraw once a second
-// while any is; an idle board draws nothing on a timer.
+// A card that is running, waiting or failed has a clock that must keep moving; an idle board draws nothing on a timer.
+// The terminal shows whole minutes, so 30 seconds is enough; the Desktop signal counts seconds, so once one has been
+// drawn the timer runs every second again.
+const TICK_MS = 30_000
+const TICK_DESKTOP_MS = 1_000
+let tickerMs = 0
+let desktopSeen = false
 function syncTicker($: Engine, rows: readonly CardRow[]): void {
   const active = rows.some((r) => r.light === 'walking' || r.light === 'waiting' || r.light === 'failed')
+  const want = desktopSeen ? TICK_DESKTOP_MS : TICK_MS
   try {
-    if (active && !ticker) ticker = $.clock.every(1000, () => $.ui.invalidate('ui.render'))
-    if (!active && ticker) {
+    if (ticker && (!active || tickerMs !== want)) {
       ticker.cancel()
       ticker = undefined
+    }
+    if (active && !ticker) {
+      ticker = $.clock.every(want, () => $.ui.invalidate('ui.render'))
+      tickerMs = want
     }
   } catch {
     // a timer is a courtesy
@@ -431,6 +440,7 @@ export function register(on: On, options?: PluginOptions) {
     lastBand = sig
     const lead = cache.rows.find((r) => r.light === 'failed' || r.light === 'waiting') ?? cache.rows.find((r) => r.light === 'walking') ?? cache.rows[0]
     const elements = $.ui.resolve(e) as Record<string, unknown>
+    if (e.surface === 'desktop') desktopSeen = true
     if (e.surface === 'desktop' && lead && elements['Svg']) {
       const { Box, Svg, Text } = elements as never as { Box: never; Svg: never; Text: never }
       return h(
