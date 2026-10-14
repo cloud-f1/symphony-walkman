@@ -17,7 +17,11 @@ function stubs(on: any, setup: Setup = {}) {
   const jiraCalls: string[] = []
   const jiraEnvs: Record<string, string>[] = []
   const counts = { revParse: 0, df: 0 }
-  mock.clock(on)
+  const toasts: string[] = []
+  const invalidated = { n: 0 }
+  const clock: any = mock.clock(on)
+  on('ui.invalidate', () => { invalidated.n++; return { value: undefined } })
+  on('ui.toast', (_: any, e: any) => { toasts.push(e.text); return { value: undefined } })
   on('env.get', (_: any, e: any) => ({ value: e.name === 'HOME' ? '/home/u' : setup.env?.[e.name] }))
   on('session.cwd', () => ({ value: CWD }))
   on('fs.exists', (_: any, e: any) => ({ value: e.path in files }))
@@ -49,7 +53,7 @@ function stubs(on: any, setup: Setup = {}) {
   on('session.start', () => ({ cwd: CWD }))
   on('turn.start', (_: any, e: any) => ({ turnId: e.turnId }))
   on('turn.complete', (_: any, e: any) => ({ text: e.answer ?? '' }))
-  return { registered, panes, jiraCalls, jiraEnvs, counts }
+  return { registered, panes, jiraCalls, jiraEnvs, counts, toasts, clock, invalidated }
 }
 
 const walkman = ($: any, args: string): Promise<{ text: string }> => $.command.run({ command: 'walkman', args })
@@ -331,4 +335,64 @@ test('/walkman doctor says so when the credentials file holds color codes', asyn
   stubs(on, { env: { WALKMAN_JIRA_PROJECT: 'CF1' }, files: { '/home/u/.config/symphony-workflow/.env': '\u001b[01;31m\u001b[KJIRA_BASE_URL\u001b[m\u001b[K=https://x.atlassian.net\n' } })
   const out = (await walkman($, 'doctor')).text
   expect(out).toContain('color codes')
+})
+
+const paneOf = ($: any, viewport = { columns: 44, rows: 30 }): Promise<any> => ($ as any).ui.render({ surface: 'terminal', component: 'Pane', requestId: 'walkman-pane', props: {}, viewport })
+
+test('pane, quiet: title, all quiet and the disk line only, and no timer runs', async ($, on) => {
+  const s = stubs(on)
+  const j = flat(await paneOf($))
+  expect(j).toContain('WALKMAN')
+  expect(j).toContain('all quiet')
+  expect(j).toContain('GB free')
+  expect(j).not.toContain('NEEDS YOU')
+  expect(j).not.toContain('RUNNING')
+  expect(j).not.toContain('working') // the legend is gone
+  await s.clock.advance(5 * 60_000)
+  const before = s.invalidated.n
+  await s.clock.advance(5 * 60_000)
+  expect(s.invalidated.n).toBe(before) // nothing runs or waits: no timer redraws the pane
+})
+
+test('pane, a permission ask: an amber needs-you card with its reason, a toast once, and a timer while it waits', async ($, on) => {
+  const s = stubs(on)
+  on('tool.check', () => ({ decision: 'ask' }))
+  on('tool.call', () => ({ result: {}, text: 'ok' }))
+  await walkman($, 'board') // the first read: nothing waits yet
+  await ($ as any).tool.check({ tool: 'Bash', command: 'ls' })
+  const j = flat(await paneOf($))
+  expect(j).toContain('NEEDS YOU')
+  expect(j).toContain('"color":"warning"')
+  expect(j).toContain('permission question')
+  expect(j).not.toContain('"color":"error"')
+  await paneOf($)
+  expect(s.toasts).toEqual(['CF1-195 needs you'])
+  const waiting = s.invalidated.n
+  await s.clock.advance(60_000)
+  expect(s.invalidated.n).toBeGreaterThan(waiting) // a card waits: the clock keeps moving
+  await ($ as any).tool.call({ tool: 'Bash', command: 'ls' }) // answered
+  await paneOf($)
+  await ($ as any).tool.check({ tool: 'Bash', command: 'ls' }) // asks again
+  await paneOf($)
+  expect(s.toasts).toEqual(['CF1-195 needs you', 'CF1-195 needs you'])
+})
+
+test('pane, a failed turn: a red failed card, not amber', async ($, on) => {
+  stubs(on)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'error' })
+  const j = flat(await paneOf($))
+  expect(j).toContain('FAILED')
+  expect(j).toContain('"color":"error"')
+  expect(j).not.toContain('NEEDS YOU')
+})
+
+test('pane, a running card is one line with its time in minutes', async ($, on) => {
+  stubs(on)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const j = flat(await paneOf($))
+  expect(j).toContain('RUNNING')
+  expect(j).toContain('CF1-195')
+  expect(j).toMatch(/<1m|\d+m/)
+  expect(j).not.toMatch(/\d:\d\d/)
 })
