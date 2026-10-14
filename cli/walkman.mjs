@@ -10,7 +10,7 @@ import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 
-export const SW_GIT = 'git+https://github.com/cloud-f1/symphony-workflow@v0.9.3' // bump with symphony-workflow releases
+export const SW_GIT = 'git+https://github.com/cloud-f1/symphony-workflow@v0.11.0' // bump with symphony-workflow releases
 export const WALKMAN_MARKETPLACE = 'cloud-f1/symphony-walkman'
 export const WALKMAN_PLUGIN = 'symphony-walkman@symphony-walkman' // its marketplace also lists symphony-workflow-ops, so one install pulls both
 export const SW_PLUGIN = 'symphony-workflow-ops@symphony-walkman'

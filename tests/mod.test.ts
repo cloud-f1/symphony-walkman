@@ -7,7 +7,8 @@ const PORCELAIN =
   'worktree /r/.claude/worktrees/a\nHEAD def\nbranch refs/heads/CF1-195-devopsday-visuals\n'
 const DF = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/d 488245288 400000000 77594624 84% /\n'
 
-interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number }
+type Issue = { key: string; status: string; summary: string; assignee: string | null }
+interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean }
 
 function stubs(on: any, setup: Setup = {}) {
   const files = setup.files ?? {}
@@ -35,6 +36,12 @@ function stubs(on: any, setup: Setup = {}) {
     if (cmd === 'git' && a === 'worktree') return { value: { exitCode: 0, stdout: setup.porcelain ?? PORCELAIN, stderr: '' } }
     if (cmd === 'git' && a === 'rev-parse' && b === '--show-toplevel') counts.revParse++
     if (cmd === 'git' && a === 'rev-parse' && b === '--show-toplevel') return { value: { exitCode: 0, stdout: CWD + '\n', stderr: '' } }
+    if ((cmd === 'uv' || cmd === 'uvx') && e.argv.includes('call')) {
+      jiraCalls.push(e.argv.join(' '))
+      const q = String(e.argv[e.argv.length - 1])
+      const cat = q.includes('Done') ? 'done' : q.includes('In Progress') ? 'inProgress' : 'todo'
+      return { value: { exitCode: setup.jiraExit ?? 0, stdout: JSON.stringify({ issues: setup.board?.[cat] ?? [] }), stderr: setup.jiraExit ? 'Jira API error 401' : '' } }
+    }
     if (cmd === 'uv' || cmd === 'uvx') { jiraCalls.push(e.argv.join(' ')); if (e.init?.env) jiraEnvs.push(e.init.env); return { value: { exitCode: setup.jiraExit ?? 0, stdout: setup.jiraOut ?? '', stderr: setup.jiraExit ? 'Jira API error 401' : '' } } }
     if (cmd === 'claude') return { value: { exitCode: 0, stdout: '2.1.296 (Claude Code)\n', stderr: '' } }
     if (cmd === 'uvx' && a === '--version') return { value: { exitCode: 0, stdout: 'uvx 0.9\n', stderr: '' } }
@@ -48,6 +55,7 @@ function stubs(on: any, setup: Setup = {}) {
     Box: ({ children, ...props }: any) => ({ type: 'Box', props, children }),
     Text: ({ children, ...props }: any) => ({ type: 'Text', props, children }),
     Svg: (props: any) => ({ type: 'Svg', props }), // a leaf: never takes children
+    ...(setup.image ? { Image: (props: any) => ({ type: 'Image', props }) } : {}),
   }))
   on('command.register', (_: any, e: any) => { registered.push(e.name); return { value: undefined } })
   on('session.start', () => ({ cwd: CWD }))
@@ -179,7 +187,11 @@ test('without a Jira project the plugin never runs symphony-workflow', async ($,
 test('the Jira lookup only ever searches: no write verb is in what it runs', async ($, on) => {
   const s = stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT })
   await walkman($, 'board')
-  for (const call of s.jiraCalls) expect(call).not.toMatch(/transition|comment|create|rollup|add-subtasks|call /)
+  expect(s.jiraCalls.some((c) => c.includes('call search_issues'))).toBe(true) // the board's queries ran too
+  for (const call of s.jiraCalls) {
+    expect(call).not.toMatch(/transition|comment|create|rollup|add-subtasks|update_issue|add_comment/)
+    if (/ call /.test(call)) expect(call).toMatch(/ call search_issues \{/) // the only tool call allowed is a search
+  }
 })
 
 test('a run in plan_ready lights the red man when WALKMAN_RUNS_DIR points at the runs folder', async ($, on) => {
@@ -417,4 +429,77 @@ test('once a Desktop signal has been drawn the redraw is every second again, for
   const before = s.invalidated.n
   await s.clock.advance(3_000)
   expect(s.invalidated.n).toBeGreaterThan(before + 1)
+})
+
+// ---------- the Jira board (WALK-143) ----------
+const BOARD = {
+  todo: [{ key: 'CF1-20', status: 'Backlog', summary: 'Desktop check', assignee: null }, { key: 'CF1-21', status: 'To Do', summary: 'Windows', assignee: 'alex hsieh' }],
+  inProgress: [{ key: 'CF1-200', status: 'In Progress', summary: 'Pitch copy refresh', assignee: 'alex hsieh' }],
+  done: [{ key: 'CF1-9', status: 'Done', summary: 'old', assignee: null }],
+}
+
+test('/walkman board prints the project board: columns in board order, assignees, done as a count', async ($, on) => {
+  stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: BOARD })
+  const out = (await walkman($, 'board')).text
+  expect(out).toContain('CF1 board · 3 open · 1 done in 14 days')
+  expect(out).toMatch(/BACKLOG \(1\)\n {2}CF1-20 +Desktop check +unassigned/)
+  expect(out.indexOf('BACKLOG')).toBeLessThan(out.indexOf('IN PROGRESS (1)'))
+  expect(out).not.toContain('CF1-9 ') // a done issue is only counted
+})
+
+test('the board queries are read only, one per status category, through the same runner', async ($, on) => {
+  const s = stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: BOARD })
+  await walkman($, 'board')
+  const calls = s.jiraCalls.filter((c) => c.includes('call search_issues'))
+  expect(calls.length).toBe(3)
+  expect(calls.some((c) => c.includes('statusCategory = \\"To Do\\"'))).toBe(true)
+  expect(calls.some((c) => c.includes('statusCategoryChangedDate >= -14d'))).toBe(true)
+})
+
+test('pane: a BOARD lane with a picture meter where the surface has Image', async ($, on) => {
+  stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: BOARD, image: true })
+  await walkman($, 'board') // loads the board
+  const pane = flat(await paneOf($))
+  expect(pane).toContain('▤ BOARD')
+  expect(pane).toContain('"type":"Image"')
+  expect(pane).toContain('"rgba"')
+  expect(pane).toContain('"alt":"▰▰▰▱▱▱▱▱"') // 1 of 3 open, the same meter as text for anyone without pictures
+})
+
+test('pane: the same meter as text where the surface has no Image (Claude Desktop)', async ($, on) => {
+  stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: BOARD })
+  await walkman($, 'board')
+  const pane = flat(await ($ as any).ui.render({ surface: 'desktop', component: 'Pane', requestId: 'walkman-pane', props: {}, viewport: { columns: 44, rows: 30 } }))
+  expect(pane).toContain('▤ BOARD')
+  expect(pane).not.toContain('"rgba"')
+  expect(pane).toContain('▰▰▰▱▱▱▱▱') // each column 1 of 3 open
+})
+
+test('the board rereads every five minutes, not on every draw', async ($, on) => {
+  const s = stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: BOARD })
+  await walkman($, 'board')
+  const n = () => s.jiraCalls.filter((c) => c.includes('call search_issues')).length
+  expect(n()).toBe(3)
+  await s.clock.advance(60_000)
+  await walkman($, 'board')
+  expect(n()).toBe(3)
+  await s.clock.advance(300_000)
+  await walkman($, 'board')
+  await s.clock.advance(1)
+  expect(n()).toBe(6)
+})
+
+test('without a Jira project there is no board and no board query', async ($, on) => {
+  const s = stubs(on, { board: BOARD })
+  const out = (await walkman($, 'board')).text
+  expect(out).not.toContain('board ·')
+  expect(flat(await paneOf($))).not.toContain('▤ BOARD')
+  expect(s.jiraCalls).toEqual([])
+})
+
+test('a failing board read says so and keeps the card board', async ($, on) => {
+  stubs(on, { env: JIRA_ENV, jiraExit: 1 })
+  const out = (await walkman($, 'board')).text
+  expect(out).toContain('CF1-195')
+  expect(out).toContain('jira board: exit 1')
 })

@@ -12,7 +12,7 @@ A [Claude Code](https://claude.com/claude-code) plugin (a native Mod) that answe
 
 Unofficial community project. MIT licensed.
 
-> **Status: v0.5, in use.** Checked in real interactive terminal sessions (pane, band, permission ask, failed turn, Jira lookup through `uvx`, `doctor`, one install for both plugins). **Not yet checked:** the drawings inside Claude Desktop itself (WALK-23) and Windows (WALK-30). Every claim and its date is in [What is verified](#what-is-verified).
+> **Status: v0.7, in use.** Checked in real interactive terminal sessions (pane, band, permission ask, failed turn, Jira lookup through `uvx`, `doctor`, one install for both plugins). **Not yet checked:** the drawings inside Claude Desktop itself (WALK-23) and Windows (WALK-30). Every claim and its date is in [What is verified](#what-is-verified).
 
 ## The signal
 
@@ -53,6 +53,11 @@ WALKMAN                          ⚠ 1  ✕ 0  ● 2  ✓ 3
 ✓ 3 done · ○ 1 idle
 ◌ IN JIRA
   WALK-27   Per-subagent rows
+
+▤ BOARD
+  To Do                      ▰▰▰▱▱▱▱▱   3
+  In Progress                ▰▰▰▰▰▱▱▱   4
+  ✓ 93 done · 14d
 disk ▕██░░░░░░▏ 23% · 40 GB free
 ```
 
@@ -61,6 +66,7 @@ disk ▕██░░░░░░▏ 23% · 40 GB free
 - **Running** is one line per card with its time and, for a symphony run, a five-step bar. Done and idle fold into one count line.
 - **Quiet:** with nothing running or waiting the pane shows the title, `✓ all quiet` and the disk line; an empty lane is not drawn. If you are not in a card branch it says so instead.
 - **Times** are whole minutes (`<1m`, `45m`, `1h05m`), in the pane and in the strip above the prompt, so on the terminal they redraw every 30 seconds while a card runs (every second only after a Desktop signal with its seconds countdown has been drawn). A toast `KEY needs you` appears when a card starts needing you (not for one that already did, and not for the first read of a session).
+- **Board** (a repo linked to Jira): one line per status column of the project's open Story-level issues, with a meter (its share of the open issues) and the count, then how many were done in the last 14 days. On a terminal that draws pictures (kitty, Ghostty) the meter is a small colored bar picture; anywhere else it is the `▰▱` text. It is the least urgent part of the pane, so it is left out whole when the pane has no room.
 - **Room:** rows beyond the pane's height end with `+N more`; a title too long for the pane is cut, never wrapped. `/walkman board` still prints the full text board with titles and a legend.
 
 One command does it all:
@@ -68,7 +74,7 @@ One command does it all:
 | You type | You get |
 |---|---|
 | `/walkman` | The side pane described above. If there is no room for a pane, the printed board instead |
-| `/walkman board` | The board printed into the conversation (plain text, a legend underneath) |
+| `/walkman board` | The board printed into the conversation (plain text, a legend underneath); in a linked repo also the project's Jira board, a section per status column with key, title and assignee |
 | `/walkman pane close` | Closes the pane (Esc does too) |
 | `/walkman doctor` | Checks the Jira link, credentials, `uvx` and worktrees, and says how to fix each (never shows a secret) |
 | `/walkman version` | Plugin version, the pinned symphony-workflow release, Claude Code version |
@@ -103,7 +109,9 @@ In progress in Jira
   JEV-35    The default goal no longer drops…  In Progress
 ```
 
-It runs the released [symphony-workflow](https://github.com/cloud-f1/symphony-workflow) CLI with `uvx` (no clone, no `uv sync`): `uvx --env-file ~/.config/symphony-workflow/.env --from git+https://github.com/cloud-f1/symphony-workflow@v0.9.3 symphony-workflow search '<JQL>'`. It runs in the background, at most once a minute, and never while drawing; the first run downloads about 95 MB (`setup` does that for you). The query is fixed to your project's Story-level cards that are In Progress, plus the cards that have a worktree. Two settings:
+It runs the released [symphony-workflow](https://github.com/cloud-f1/symphony-workflow) CLI with `uvx` (no clone, no `uv sync`): `uvx --env-file ~/.config/symphony-workflow/.env --from git+https://github.com/cloud-f1/symphony-workflow@v0.11.0 symphony-workflow search '<JQL>'`. It runs in the background, at most once a minute, and never while drawing; the first run downloads about 95 MB (`setup` does that for you). The query is fixed to your project's Story-level cards that are In Progress, plus the cards that have a worktree.
+
+The board (`▤ BOARD` in the pane, the Jira section of `/walkman board`) is three more read-only searches through the same CLI (`call search_issues`), one per status category (To Do, In Progress, and Done changed in the last 14 days, counted up to 100), every five minutes. symphony-workflow does not return an issue's Epic or subtasks yet, so the board shows neither. Columns are ordered by category, then by the usual board names (Backlog, To Do, Blocked, In Progress, In Review…), then A to Z. Two settings:
 
 - Per repo, in that repo's `.claude/settings.json` (so each repo names its own project): `{ "env": { "WALKMAN_JIRA_PROJECT": "JEV" } }`
 - Per person, once, **the Jira credentials**, in either place:
@@ -212,6 +220,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | `walkman configure` on the real folder of repos and the panel in a real session (2026-10-14) | Passed: a dry run over 75 repos kept the four projects already set, planned DCSYS and CF1 (found in Jira) and refused `BUG`, `HF`, `P2`, `SP`, `TICKET` (no issues in Jira, so not applied). In a real session with project RCPM and two worktree cards, the pane and `/walkman board` listed both cards and all four In Progress RCPM Stories (one with its Jira title as a card, three under "In progress in Jira"). **Not seen with real data:** the `+N more` line past six (the largest project has six In Progress; a stubbed check covers it). Note: the pane is narrow, so it shows keys without titles; `/walkman board` shows titles |
 | Panel redesign in 0.6.0 (real session, scratch repo with two card worktrees, project RCPM, 2026-10-14) | Passed: idle, running (`● RUNNING`, one line, `<1m`) and a permission ask (`⚠ NEEDS YOU` card with its reason, `┃` bar, time flush right, toast) were drawn; the real foreground colors were amber `#ffc107` bold for needs-you, grey for zero counters, green for the disk bar. **Not seen in a real session:** a failed card (a stubbed test and the core checks cover it; a real failure takes about four minutes of retries), the `+N more` line, and the toast on screen (the Mod test sees the call). Not changed from the owner's spec: the redraw interval stays at one second while a card runs, because the strip above the prompt still shows a seconds clock |
 | Strip above the prompt in minutes, 0.6.1 (real session, same steps on 0.6.0 and 0.6.1, 2026-10-14) | Passed: during a running turn the strip read `running 0:06` then `0:20` on 0.6.0 and `running <1m` both times on 0.6.1. The 30-second redraw and the one-second Desktop exception are covered by Mod tests on the mock clock, not observed on a real screen |
+| Jira board, 0.7.0 (real session, scratch card worktrees, projects WALK and RCPM, symphony-workflow v0.11.0, 2026-10-15) | Passed: `/walkman board` printed `WALK board · 5 open · 23 done in 14 days` with the five Backlog Stories, titles and assignees; the pane drew `▤ BOARD` with one line per column (RCPM: `To Do 3`, `In Progress 4`, `✓ 93 done · 14d`) above the disk line. That terminal does not draw pictures, so the meter showed as `▰▱` text. **Not seen:** the meter as a picture in Ghostty (a driven session gets no picture support: the engine sent no image command), and a project with more than two columns on a real screen (unit checks cover the order) |
 | Windows | **Not run**: no Windows machine. The disk line is skipped there and paths are untested |
 
 ## Develop
