@@ -27,3 +27,5 @@ The `symphony-workflow-ops` plugin comes with Walkman (one install brings both).
 - After creating Stories run `audit WALK`; it should print 0 errors. `audit WALK --assignee-me` also lists the older Done Stories that were never assigned: known and left alone.
 - `rollup WALK-<sub-task>` marks that Sub-task Done and rolls up; run it for each Sub-task after the pull request is merged. The Epic stays open while other Stories are open.
 - The env file for uvx must not hold terminal color codes (see `/walkman doctor`).
+- A Jira project that does not exist is not an error for `search`: it prints `0 total` and exits 0. To test that a project key is real, count the rows.
+- `uvx` writes its progress lines to stderr; when parsing the JSON that `call` prints, drop stderr (`2>/dev/null`) or the parse fails.

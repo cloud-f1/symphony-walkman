@@ -1,4 +1,4 @@
-# Handover (state at v0.5.3, refreshed 2026-10-14)
+# Handover (state at v0.5.6, refreshed 2026-10-14)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.5.3` here; `v0.5.0` … `v0.9.3` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.5.6` here; `v0.5.0` … `v0.9.3` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -43,7 +43,7 @@ Do not install `symphony-workflow-ops` from both marketplaces; one copy is enoug
 |---|---|
 | `core/*.ts` | Pure logic: card from branch, light, board and pane layout (`style.ts`), SVG, Jira search parsing and JQL (`jira.ts`), doctor wording, version constants. No I/O, no clock reads. |
 | `hooks/register.ts` | The only file that calls the mods API. Caches reads, runs the Jira lookup in the background, redraws once a second while a card is running, waiting or failed. |
-| `cli/walkman.mjs` | Setup CLI: plain ESM, Node 18+, no dependencies, runs through `npx`. Never prints a credential. |
+| `cli/walkman.mjs` | Setup CLI: plain ESM, Node 18+, no dependencies, runs through `npx`. Commands `doctor`, `setup`, `configure` (every repo in a folder), `card`, `version`. Never prints a credential. |
 | `skills/*` | Three skills for Claude, all `user-invocable: false`: `using-walkman`, `developing-walkman` (contributor rules), `tracking-walk-tickets`. |
 | `checks/*.check.ts` | Pure and CLI tests (`node --experimental-strip-types --test`). |
 | `tests/mod.test.ts` | Mod tests on a stubbed host (`claude plugin test`). |
@@ -54,7 +54,7 @@ Do not install `symphony-workflow-ops` from both marketplaces; one copy is enoug
 
 | Setting | Scope | Where |
 |---|---|---|
-| `WALKMAN_JIRA_PROJECT` (e.g. `JEV`) | per repo | that repo's `.claude/settings.json` `env` |
+| `WALKMAN_JIRA_PROJECT` (e.g. `JEV`) | per repo | that repo's `.claude/settings.local.json` (or `settings.json`) `env`; `walkman configure` sets it for every repo in a folder. Do not set the plugin option `jira_project` globally: it applies to every repo without its own setting |
 | Jira URL, email, API token | per person | plugin settings (`jira_base_url`, `jira_email`, `jira_api_token`, token is sensitive), or env `WALKMAN_JIRA_*`, or a credentials file |
 | Credentials file | per person | `~/.config/symphony-workflow/.env` or `WALKMAN_JIRA_ENV_FILE` / plugin setting `jira_env_file` |
 | Old clone | per person | `WALKMAN_SYMPHONY_WORKFLOW_DIR` (uses the clone's `.env`) |
@@ -122,3 +122,9 @@ Docker was removed so nothing remains there.
 2. `npm test` (checks plus `claude plugin test`) and `claude plugin validate --strict .`.
 3. Check the behavior in a real session with `tools/real-session/drive.py`, not only the stubs.
 4. PR, merge, bump version and tag, close the tickets bottom-up with `rollup` after the merge is confirmed.
+
+## Decisions since 0.5.3
+
+- **The Jira project is per repo, never global.** A global plugin option `jira_project` made every repo without its own setting show that project's cards (it showed JEV cards in unrelated repos). `configure` reports it and removes it only with `--drop-global-project`.
+- **`configure` never applies an unconfirmed guess.** The project most often named in git history is used only if a read-only Jira search finds issues in it; on the owner's 75 repos the unchecked guess would have written `BUG`, `HF`, `P2`, `SP` and `TICKET`. `--no-verify` trusts git history.
+- **The pane is narrow and shows keys without titles; `/walkman board` shows titles.** Both list every worktree card and every In Progress Story (more than six Jira-only rows end with `+N more`).

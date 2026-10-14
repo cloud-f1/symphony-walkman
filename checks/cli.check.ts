@@ -5,9 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 // @ts-ignore the CLI is plain ESM JavaScript
-import { SW_GIT, atLeast, branchFor, hasAnsi, inferProject, pickJiraEnv, lookupJql, mergeEnvSetting, missingEnv, parseEnvNames, planSetup, pluginInstalled, searchCommand, slugify, worktreeDirFor, writeSetting } from '../cli/walkman.mjs'
+import { SW_GIT, atLeast, branchFor, hasAnsi, inferProject, listRepos, pickJiraEnv, planConfigure, withAutoUpdate, withoutGlobalProject, lookupJql, mergeEnvSetting, missingEnv, parseEnvNames, planSetup, pluginInstalled, searchCommand, slugify, worktreeDirFor, writeSetting } from '../cli/walkman.mjs'
 
 const CLI = new URL('../cli/walkman.mjs', import.meta.url).pathname
+// The CLI reads WALKMAN_* variables; a machine that has them set must not change what these checks see.
+const cleanEnv = (): Record<string, string> => Object.fromEntries(Object.entries(process.env).filter(([k, v]) => !k.startsWith('WALKMAN_') && v !== undefined)) as Record<string, string>
 const sh = (cwd: string, ...args: string[]) => spawnSync('git', args, { cwd, encoding: 'utf8' })
 const tmp = () => mkdtempSync(join(tmpdir(), 'walkman-cli-'))
 function repoWith(commits: string[]) {
@@ -95,7 +97,7 @@ test('the lookup runs the released CLI through uvx, or the older clone when one 
 
 test('doctor --json on a scratch repo infers the project and flags what is missing', () => {
   const dir = repoWith(['JEV-1 start', 'JEV-2 more', 'chore'])
-  const r = spawnSync('node', [CLI, 'doctor', '--json', '--repo', dir, '--creds', join(dir, 'nope.env')], { encoding: 'utf8' })
+  const r = spawnSync('node', [CLI, 'doctor', '--json', '--repo', dir, '--creds', join(dir, 'nope.env')], { env: cleanEnv(), encoding: 'utf8' })
   const list = JSON.parse(r.stdout) as { level: string; text: string }[]
   assert.ok(list.some((c) => c.text.startsWith('git repo')))
   assert.ok(list.some((c) => c.text.includes('git history suggests JEV')))
@@ -103,7 +105,7 @@ test('doctor --json on a scratch repo infers the project and flags what is missi
 
 test('setup --dry-run prints a plan and changes nothing', () => {
   const dir = repoWith(['JEV-1 a', 'JEV-2 b'])
-  const r = spawnSync('node', [CLI, 'setup', '--dry-run', '--repo', dir, '--creds', join(dir, 'nope.env')], { encoding: 'utf8' })
+  const r = spawnSync('node', [CLI, 'setup', '--dry-run', '--repo', dir, '--creds', join(dir, 'nope.env')], { env: cleanEnv(), encoding: 'utf8' })
   assert.match(r.stdout, /Setup plan:/)
   assert.match(r.stdout, /WALKMAN_JIRA_PROJECT=JEV/)
   assert.ok(!existsSync(join(dir, '.claude', 'settings.json')))
@@ -111,7 +113,7 @@ test('setup --dry-run prints a plan and changes nothing', () => {
 
 test('setup without a terminal and without --yes applies nothing', () => {
   const dir = repoWith(['JEV-1 a', 'JEV-2 b'])
-  const r = spawnSync('node', [CLI, 'setup', '--repo', dir, '--creds', join(dir, 'nope.env')], { encoding: 'utf8', input: '' })
+  const r = spawnSync('node', [CLI, 'setup', '--repo', dir, '--creds', join(dir, 'nope.env')], { env: cleanEnv(), encoding: 'utf8', input: '' })
   assert.equal(r.status, 2)
   assert.match(r.stdout, /nothing changed/i)
   assert.ok(!existsSync(join(dir, '.claude')))
@@ -120,11 +122,11 @@ test('setup without a terminal and without --yes applies nothing', () => {
 test('card creates the worktree and branch for a Jira key', () => {
   const dir = repoWith(['init'])
   mkdirSync(join(dir, '.claude'), { recursive: true })
-  const r = spawnSync('node', [CLI, 'card', 'JEV-47', 'withhold secrets', '--repo', dir, '--creds', join(dir, 'nope.env')], { encoding: 'utf8' })
+  const r = spawnSync('node', [CLI, 'card', 'JEV-47', 'withhold secrets', '--repo', dir, '--creds', join(dir, 'nope.env')], { env: cleanEnv(), encoding: 'utf8' })
   assert.equal(r.status, 0, r.stderr + r.stdout)
   assert.ok(existsSync(join(dir, '.claude', 'worktrees', 'jev-47-withhold-secrets')))
   assert.match(sh(dir, 'branch', '--list', 'JEV-47-withhold-secrets').stdout, /JEV-47-withhold-secrets/)
-  const bad = spawnSync('node', [CLI, 'card', 'nope', '--repo', dir], { encoding: 'utf8' })
+  const bad = spawnSync('node', [CLI, 'card', 'nope', '--repo', dir], { env: cleanEnv(), encoding: 'utf8' })
   assert.equal(bad.status, 1)
 })
 
@@ -154,7 +156,7 @@ test('doctor names color codes in the credentials file instead of saying it is m
   const dir = repoWith(['init'])
   const env = join(dir, 'colored.env')
   writeFileSync(env, '\u001b[01;31m\u001b[KJIRA_BASE_URL\u001b[m\u001b[K=https://x.atlassian.net\n')
-  const r = spawnSync('node', [CLI, 'doctor', '--json', '--repo', dir, '--creds', env], { encoding: 'utf8' })
+  const r = spawnSync('node', [CLI, 'doctor', '--json', '--repo', dir, '--creds', env], { env: cleanEnv(), encoding: 'utf8' })
   const list = JSON.parse(r.stdout) as { level: string; text: string; fix: string }[]
   const hit = list.find((c) => c.text.includes('color codes'))
   assert.ok(hit, r.stdout)
@@ -171,7 +173,101 @@ test('card without a slug does not run the full doctor survey (claude, uvx) just
     writeFileSync(join(bin, name), `#!/bin/sh\necho ${name} >> ${marker}\nexit 1\n`)
     chmodSync(join(bin, name), 0o755)
   }
-  const r = spawnSync('node', [CLI, 'card', 'JEV-47', '--repo', dir, '--creds', join(dir, 'nope.env')], { encoding: 'utf8', env: { ...process.env, PATH: bin + ':' + process.env.PATH } })
+  const r = spawnSync('node', [CLI, 'card', 'JEV-47', '--repo', dir, '--creds', join(dir, 'nope.env')], { env: cleanEnv(), encoding: 'utf8', env: { ...cleanEnv(), PATH: bin + ':' + process.env.PATH } })
   assert.equal(r.status, 0, r.stderr + r.stdout)
   assert.ok(!existsSync(marker), 'card must not call claude, uv or uvx when there are no credentials to use')
+})
+
+test('configure plans one setting per repo: keep what is set, infer the rest, ask for the unknown', () => {
+  const facts = {
+    target: 'settings.local.json',
+    repos: [
+      { name: 'a', path: '/r/a', current: '', inferred: 'ABC', inferredOk: true, override: '' },
+      { name: 'f', path: '/r/f', current: '', inferred: 'BUG', inferredOk: false, override: '' },
+      { name: 'b', path: '/r/b', current: 'XYZ', inferred: '', inferredOk: false, override: '' },
+      { name: 'c', path: '/r/c', current: '', inferred: '', inferredOk: false, override: '' },
+      { name: 'd', path: '/r/d', current: 'OLD', inferred: '', inferredOk: false, override: 'NEW' },
+      { name: 'e', path: '/r/e', current: '', inferred: 'ABC', inferredOk: true, override: 'EEE' },
+    ],
+    global: { marketplace: 'present', autoUpdate: false, jiraProject: 'JEV', credsOk: true },
+    dropGlobalProject: false,
+  }
+  const plan = planConfigure(facts)
+  const writes = plan.steps.filter((st: { write?: unknown }) => st.write).map((st: { write: { file: string; value: string } }) => [st.write.file, st.write.value])
+  assert.deepEqual(writes, [['/r/a/.claude/settings.local.json', 'ABC'], ['/r/d/.claude/settings.local.json', 'NEW'], ['/r/e/.claude/settings.local.json', 'EEE']])
+  assert.ok(plan.steps.some((st: { id: string }) => st.id === 'autoupdate'))
+  assert.ok(!plan.steps.some((st: { id: string }) => st.id === 'drop-global-project'), 'a global project is reported, not removed, unless asked')
+  const notes = plan.notes.join('\n')
+  assert.deepEqual(plan.none, ['c'])
+  assert.match(notes, /f: BUG appears in git history but no Jira project BUG with issues was found.*--set f=BUG/)
+  assert.ok(!plan.steps.some((st: { id: string }) => st.id === 'repo:f'), 'a guess Jira does not confirm is never applied')
+  assert.match(notes, /jira_project=JEV.*--drop-global-project/)
+  assert.deepEqual(plan.keep, ['b'])
+  const dropped = planConfigure({ ...facts, dropGlobalProject: true })
+  assert.ok(dropped.steps.some((st: { id: string }) => st.id === 'drop-global-project'))
+  const done = planConfigure({ ...facts, repos: [facts.repos[1]], global: { marketplace: 'present', autoUpdate: true, jiraProject: '', credsOk: true } })
+  assert.deepEqual(done.steps, [])
+})
+
+test('the global settings edits keep every other key', () => {
+  const json = { theme: 'dark', extraKnownMarketplaces: { other: { source: 1 }, 'symphony-walkman': { source: { repo: 'x' } } }, pluginConfigs: { 'symphony-walkman@symphony-walkman': { options: { jira_project: 'JEV', jira_env_file: '/e' } }, 'o@o': { options: { a: 1 } } } }
+  const on = withAutoUpdate(json)
+  assert.equal(on.extraKnownMarketplaces['symphony-walkman'].autoUpdate, true)
+  assert.deepEqual(on.extraKnownMarketplaces.other, { source: 1 })
+  assert.equal(on.theme, 'dark')
+  const off = withoutGlobalProject(json)
+  assert.deepEqual(off.pluginConfigs['symphony-walkman@symphony-walkman'].options, { jira_env_file: '/e' })
+  assert.deepEqual(off.pluginConfigs['o@o'], { options: { a: 1 } })
+  assert.equal(json.pluginConfigs['symphony-walkman@symphony-walkman'].options.jira_project, 'JEV') // the input is not mutated
+})
+
+test('configure on a folder of repos: dry run changes nothing, --yes writes only the local files and the asked global edits', () => {
+  const root = tmp()
+  const mk = (name: string, commits: string[]) => {
+    const dir = join(root, name)
+    mkdirSync(dir)
+    sh(dir, 'init', '-q', '-b', 'main')
+    for (const c of commits) sh(dir, '-c', 'user.email=a@b.c', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', c)
+    return dir
+  }
+  const a = mk('a', ['ABC-1 one', 'ABC-2 two'])
+  const b = mk('b', ['XYZ-1 x', 'XYZ-2 y'])
+  mkdirSync(join(b, '.claude'))
+  writeFileSync(join(b, '.claude', 'settings.local.json'), JSON.stringify({ env: { WALKMAN_JIRA_PROJECT: 'KEEP' }, permissions: { allow: ['x'] } }))
+  const c = mk('c', ['no key here'])
+  mkdirSync(join(root, 'not-a-repo'))
+  assert.deepEqual(listRepos(root).map((p: string) => p.split('/').pop()), ['a', 'b', 'c'])
+
+  const home = tmp()
+  writeFileSync(join(home, 'settings.json'), JSON.stringify({ theme: 'dark', extraKnownMarketplaces: { 'symphony-walkman': { source: { source: 'github', repo: 'cloud-f1/symphony-walkman' } } }, pluginConfigs: { 'symphony-walkman@symphony-walkman': { options: { jira_project: 'JEV' } } } }))
+  const run = (...extra: string[]) => spawnSync('node', [CLI, 'configure', '--root', root, '--claude-home', home, '--creds', join(home, 'nope.env'), ...extra], { env: cleanEnv(), encoding: 'utf8', input: '' })
+
+  const dry = run('--dry-run', '--no-verify')
+  assert.equal(dry.status, 0, dry.stderr + dry.stdout)
+  assert.match(dry.stdout, /a: set WALKMAN_JIRA_PROJECT=ABC/)
+  assert.ok(!existsSync(join(a, '.claude')))
+  assert.equal(JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8')).extraKnownMarketplaces['symphony-walkman'].autoUpdate, undefined)
+
+  const unverified = run('--dry-run')
+  assert.equal(unverified.status, 0, unverified.stderr)
+  assert.match(unverified.stdout, /a: ABC appears in git history but no Jira project ABC with issues was found/)
+  assert.ok(!/a: set WALKMAN_JIRA_PROJECT/.test(unverified.stdout), 'without credentials a guess is not applied')
+  assert.match(unverified.stdout, /… 1 more with no Jira project found/)
+
+  const noTty = run('--no-verify')
+  assert.equal(noTty.status, 2)
+  assert.ok(!existsSync(join(a, '.claude')))
+
+  const r = run('--yes', '--drop-global-project', '--no-verify', '--set', 'c=CCC')
+  assert.equal(r.status, 0, r.stderr + r.stdout)
+  assert.equal(JSON.parse(readFileSync(join(a, '.claude', 'settings.local.json'), 'utf8')).env.WALKMAN_JIRA_PROJECT, 'ABC')
+  assert.equal(JSON.parse(readFileSync(join(c, '.claude', 'settings.local.json'), 'utf8')).env.WALKMAN_JIRA_PROJECT, 'CCC')
+  const kept = JSON.parse(readFileSync(join(b, '.claude', 'settings.local.json'), 'utf8'))
+  assert.equal(kept.env.WALKMAN_JIRA_PROJECT, 'KEEP') // already set: left alone
+  assert.deepEqual(kept.permissions, { allow: ['x'] })
+  const g = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'))
+  assert.equal(g.extraKnownMarketplaces['symphony-walkman'].autoUpdate, true)
+  assert.equal(g.pluginConfigs['symphony-walkman@symphony-walkman'].options.jira_project, undefined)
+  assert.equal(g.theme, 'dark')
+  assert.ok(!r.stdout.includes('tok'), 'no credential is printed')
 })
