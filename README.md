@@ -37,13 +37,37 @@ disk · 74 GB free · 84% used
 ```
 
 - A strip above the prompt shows the most urgent card (terminal: one colored line; Desktop: the signal drawing plus the line).
-- Colors follow your theme and the status line: green is going, red is needs-you or failed, dim is idle; the disk line turns yellow at 80% used and red at 90%.
+- Colors follow your theme and the status line: green is going, amber is needs-you, red is failed, dim is idle; the disk line turns amber at 80% used and red at 90%.
+
+### The side pane (`/walkman`)
+
+The pane shows as much as a card needs your attention, so when nothing needs you it is nearly empty:
+
+```
+WALKMAN                          ⚠ 1  ✕ 0  ● 2  ✓ 3
+⚠ NEEDS YOU
+┃ WALK-128  Panel redesign…                  7m
+┃  plan is ready for your review
+● RUNNING
+● WALK-129  Real session check…       ██░░░ 12m
+✓ 3 done · ○ 1 idle
+◌ IN JIRA
+  WALK-27   Per-subagent rows
+disk ▕██░░░░░░▏ 23% · 40 GB free
+```
+
+- **Header:** the title, and on the right how many cards are `⚠` needs you, `✕` failed, `●` running, `✓` done (a zero is dim).
+- **Needs you** (amber) and **failed** (red) are the only cards that expand, the longest-waiting first. Needs-you says why only from what is known: a permission question is waiting, or a symphony run is in `plan_ready`. The question itself and a failure's message are not available to the plugin, so they are not shown.
+- **Running** is one line per card with its time and, for a symphony run, a five-step bar. Done and idle fold into one count line.
+- **Quiet:** with nothing running or waiting the pane shows the title, `✓ all quiet` and the disk line; an empty lane is not drawn. If you are not in a card branch it says so instead.
+- **Times** are whole minutes (`<1m`, `45m`, `1h05m`). A toast `KEY needs you` appears when a card starts needing you (not for one that already did, and not for the first read of a session).
+- **Room:** rows beyond the pane's height end with `+N more`; a title too long for the pane is cut, never wrapped. `/walkman board` still prints the full text board with titles and a legend.
 
 One command does it all:
 
 | You type | You get |
 |---|---|
-| `/walkman` | The colored side pane. If there is no room for a pane, the printed board instead |
+| `/walkman` | The side pane described above. If there is no room for a pane, the printed board instead |
 | `/walkman board` | The board printed into the conversation (plain text, a legend underneath) |
 | `/walkman pane close` | Closes the pane (Esc does too) |
 | `/walkman doctor` | Checks the Jira link, credentials, `uvx` and worktrees, and says how to fix each (never shows a secret) |
@@ -186,6 +210,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | Docs and skills in 0.5.4 (2026-10-14) | Checked: the six badge URLs return an SVG (the version badge reads the latest tag), `claude plugin validate --strict .` passes. Documentation only; no behavior change, so no new real-session run |
 | Jira lookup through symphony-workflow v0.9.3 (real session, scratch repo with a `WALK-107-…` worktree, 2026-10-14) | Passed: `/walkman board` showed the card with its Jira title and `/walkman debug` said `jira: 1 issues, last read ok`; `search` printed the same three TAB columns on v0.5.2 and v0.9.3. The pin in `core/version.ts` and the CLI was moved to v0.9.3 |
 | `walkman configure` on the real folder of repos and the panel in a real session (2026-10-14) | Passed: a dry run over 75 repos kept the four projects already set, planned DCSYS and CF1 (found in Jira) and refused `BUG`, `HF`, `P2`, `SP`, `TICKET` (no issues in Jira, so not applied). In a real session with project RCPM and two worktree cards, the pane and `/walkman board` listed both cards and all four In Progress RCPM Stories (one with its Jira title as a card, three under "In progress in Jira"). **Not seen with real data:** the `+N more` line past six (the largest project has six In Progress; a stubbed check covers it). Note: the pane is narrow, so it shows keys without titles; `/walkman board` shows titles |
+| Panel redesign in 0.6.0 (real session, scratch repo with two card worktrees, project RCPM, 2026-10-14) | Passed: idle, running (`● RUNNING`, one line, `<1m`) and a permission ask (`⚠ NEEDS YOU` card with its reason, `┃` bar, time flush right, toast) were drawn; the real foreground colors were amber `#ffc107` bold for needs-you, grey for zero counters, green for the disk bar. **Not seen in a real session:** a failed card (a stubbed test and the core checks cover it; a real failure takes about four minutes of retries), the `+N more` line, and the toast on screen (the Mod test sees the call). Not changed from the owner's spec: the redraw interval stays at one second while a card runs, because the strip above the prompt still shows a seconds clock |
 | Windows | **Not run**: no Windows machine. The disk line is skipped there and paths are untested |
 
 ## Develop

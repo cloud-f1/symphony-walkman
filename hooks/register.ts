@@ -11,7 +11,7 @@ import { doctorLines, envNames, hasAnsi } from '../core/doctor.ts'
 import { SW_GIT, SW_REF, VERSION } from '../core/version.ts'
 import type { JiraIssue } from '../core/jira.ts'
 import { HELP, LEGEND, plain, stylePane, styleBand } from '../core/style.ts'
-import type { Line, Tone } from '../core/style.ts'
+import type { Line, PaneLine, Tone } from '../core/style.ts'
 import { signalSvg } from '../core/svg.ts'
 import type { CardRow, Disk, RunState } from '../core/contracts.ts'
 
@@ -46,6 +46,12 @@ const THEME: Record<Tone, string> = { success: 'success', error: 'error', warnin
 function styled(Box: never, Text: never, line: Line): unknown {
   if (line.length === 0) return h(Text, null, ' ')
   return h(Box, { flexDirection: 'row' }, ...line.map((seg) => h(Text, { color: THEME[seg.tone ?? 'text'], bold: seg.bold === true, wrap: 'truncate-end' }, seg.text)))
+}
+
+// One pane line: `left` as styled Texts; with `right` (a time), the two sit at opposite edges of the row.
+function paneRow(Box: never, Text: never, line: PaneLine): unknown {
+  if (!line.right) return styled(Box, Text, line.left)
+  return h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, styled(Box, Text, line.left), styled(Box, Text, line.right))
 }
 
 async function readRunState($: Engine, key: string): Promise<RunState | undefined> {
@@ -175,6 +181,20 @@ function ensureJira($: Engine, now: number, keys: string[]): Promise<void> | und
 function view(): { rows: CardRow[]; others: JiraIssue[] } {
   return mergeJira(cache.rows, jira.issues)
 }
+// A toast the moment a card starts needing you (once per card until it stops needing you); not on the first read.
+const waitingSeen = new Set<string>()
+let toastReady = false
+function notifyNeedsYou($: Engine, rows: readonly CardRow[]): void {
+  const waiting = rows.filter((r) => r.light === 'waiting').map((r) => r.key)
+  try {
+    if (toastReady) for (const key of waiting) if (!waitingSeen.has(key)) $.ui.toast(`${key} needs you`)
+  } catch {
+    // a toast is a courtesy
+  }
+  waitingSeen.clear()
+  for (const key of waiting) waitingSeen.add(key)
+  toastReady = true
+}
 let lastBand = ''
 let renders = 0
 let ticker: { cancel: () => void } | undefined
@@ -247,6 +267,7 @@ async function load($: Engine, now: number): Promise<void> {
   }
   for (const k of [...seen.keys()]) if (!rows.some((r) => k === `${r.worktree}|${r.light}`)) seen.delete(k)
   cache.rows = rows
+  notifyNeedsYou($, rows)
   syncTicker($, rows)
   if (now - cache.diskAt >= DISK_MS || now < cache.diskAt) {
     cache.disk = await readDisk($)
@@ -394,8 +415,9 @@ export function register(on: On, options?: PluginOptions) {
     const { Box, Text } = $.ui.resolve(e)
     await refresh($)
     const v = view()
-    const lines = stylePane(v.rows, cache.disk, await $.clock.now(), v.others)
-    return h(Box, { flexDirection: 'column', paddingX: 1 }, ...lines.map((line) => styled(Box as never, Text as never, line))) as RenderElement
+    // viewport.columns is the whole terminal, not this pane, so only the height is used; a title the pane cannot hold is cut by Text itself
+    const lines = stylePane(v.rows, cache.disk, await $.clock.now(), v.others, { rows: e.viewport?.rows })
+    return h(Box, { flexDirection: 'column', paddingX: 1 }, ...lines.map((line) => paneRow(Box as never, Text as never, line))) as RenderElement
   })
 
   // The always-on strip above the prompt: one text line on the terminal, the signal drawing on Desktop.
