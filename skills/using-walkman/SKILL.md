@@ -7,7 +7,8 @@ description: Explain and operate the Symphony Walkman board. Use when the user a
 # Using Symphony Walkman
 
 - `/walkman` opens the colored side pane (it prints the board when there is no room for a pane).
-- `/walkman board` prints one row per card worktree (`KEY-n-slug` branch) with its light, state and elapsed time, plus free disk space.
+- In a repo linked to Jira, `/walkman board` opens the board pane: the project's status columns side by side, each issue a card box, the card Claude works on lit (● running, ⚠ needs you, ✕ failed); `h` / `l` move the columns when they do not fit. `/walkman board print` prints instead.
+- `/walkman board print` prints one row per card worktree (`KEY-n-slug` branch) with its light, state and elapsed time, plus free disk space.
 - In a repo linked to a Jira project (`WALKMAN_JIRA_PROJECT`), `/walkman board` also prints the project's Jira board (open Story-level issues by status column, with key, title and assignee; Done only as a 14-day count), and the pane shows the same as a `▤ BOARD` lane: one line per column with a meter and the count. Epic and subtask progress are not shown: symphony-workflow does not return them yet.
 - `/walkman pane` opens the same board as a side pane; `/walkman pane close` closes it.
 - Green walking man = Claude is working on that card. Red standing man = it needs the person (a permission ask or a symphony-workflow run in `plan_ready`). Red with the word `failed` = the last turn failed (on Desktop the red man also blinks).

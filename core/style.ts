@@ -22,7 +22,8 @@ export const LEGEND: Line = [
 ]
 export const HELP = [
   '/walkman            colored side pane (board if there is no room)',
-  '/walkman board      print the board',
+  '/walkman board      Jira board pane: columns side by side, h / l move them',
+  '/walkman board print print the cards and the Jira board',
   '/walkman pane close close the pane',
   '/walkman doctor     check the Jira link, credentials file, uvx and worktrees',
   '/walkman version    plugin, symphony-workflow and Claude Code versions',
@@ -114,8 +115,8 @@ export function diskBar(usedPct: number, cellCount = 8): string {
 const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/
 // Text from outside (a Jira title, a branch name) is drawn as plain characters: nothing in it may steer the terminal.
 export const plainText = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').trim()
-const cells = (text: string): number => [...text].reduce((n, c) => n + (WIDE.test(c) ? 2 : 1), 0)
-function clipCells(text: string, max: number): string {
+export const cells = (text: string): number => [...text].reduce((n, c) => n + (WIDE.test(c) ? 2 : 1), 0)
+export function clipCells(text: string, max: number): string {
   if (cells(text) <= max) return text
   let out = ''
   for (const c of text) {
