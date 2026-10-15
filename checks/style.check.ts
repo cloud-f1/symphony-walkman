@@ -233,3 +233,12 @@ test('pane: control characters in a title never reach the screen', () => {
   assert.ok(!/[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/.test(t.replace(/\n/g, '')), 'a control character is drawn')
   assert.ok(t.includes('evil') && t.includes('title'))
 })
+
+test('the strip above the prompt shows whole minutes, never seconds', () => {
+  const text = (light: CardRow['light'], ms: number) => plain(styleBand([row({ light, sinceMs: 0 })], ms))
+  assert.match(text('walking', 5_000), /<1m/)
+  assert.match(text('waiting', 61_000), / 1m/)
+  assert.match(text('walking', 65 * 60_000), /1h05m/)
+  assert.ok(!/\d:\d\d/.test(text('walking', 125_000)), 'no m:ss clock')
+  assert.equal(plain(styleBand([row({ light: 'idle' })], 90_000)).includes('m'), false, 'an idle card shows no time')
+})

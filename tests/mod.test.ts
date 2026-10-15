@@ -396,3 +396,25 @@ test('pane, a running card is one line with its time in minutes', async ($, on) 
   expect(j).toMatch(/<1m|\d+m/)
   expect(j).not.toMatch(/\d:\d\d/)
 })
+
+test('on the terminal a running card redraws about every 30 seconds, not every second', async ($, on) => {
+  const s = stubs(on)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await paneOf($) // the first read starts the timer
+  const before = s.invalidated.n
+  await s.clock.advance(5_000)
+  expect(s.invalidated.n).toBe(before)
+  await s.clock.advance(30_000)
+  expect(s.invalidated.n).toBeGreaterThan(before)
+})
+
+test('once a Desktop signal has been drawn the redraw is every second again, for its countdown', async ($, on) => {
+  const s = stubs(on)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await ($ as any).ui.render({ surface: 'desktop', component: 'AbovePrompt', props: {} })
+  await s.clock.advance(4_000) // past the read cache, so the next draw looks at the timer again
+  await ($ as any).ui.render({ surface: 'desktop', component: 'AbovePrompt', props: {} })
+  const before = s.invalidated.n
+  await s.clock.advance(3_000)
+  expect(s.invalidated.n).toBeGreaterThan(before + 1)
+})

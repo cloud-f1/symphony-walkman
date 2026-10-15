@@ -33,6 +33,8 @@ export const plain = (line: Line): string => line.map((s) => s.text).join('')
 const stateText = (r: CardRow): string => r.runState ?? LABEL[r.light]
 // An idle card has no running clock; showing 0:00 there reads as a bug.
 const elapsed = (r: CardRow, now: number): string => (r.light === 'idle' ? '' : ' ' + formatElapsed(now - r.sinceMs))
+// The strip above the prompt shows whole minutes like the pane, so it needs a redraw only every 30 seconds.
+const bandElapsed = (r: CardRow, now: number): string => (r.light === 'idle' ? '' : ' ' + formatMinutes(now - r.sinceMs))
 const glyph = (r: CardRow): Seg => ({ text: GLYPH[r.light], tone: TONE[r.light], bold: true })
 
 // Run progress for symphony-workflow's states, drawn like the status line bars: filled blocks then dots.
@@ -51,7 +53,7 @@ export function styleBand(rows: readonly CardRow[], now: number): Line {
     glyph(lead),
     { text: ' ' + lead.key, bold: true },
     { text: ' ' + LABEL[lead.light], tone: TONE[lead.light], bold: lead.light === 'waiting' || lead.light === 'failed' },
-    { text: elapsed(lead, now), tone: 'subtle' },
+    { text: bandElapsed(lead, now), tone: 'subtle' },
   ]
   if (rows.length > 1) line.push({ text: `  (+${rows.length - 1})`, tone: 'subtle' })
   return line

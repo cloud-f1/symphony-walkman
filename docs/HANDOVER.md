@@ -1,4 +1,4 @@
-# Handover (state at v0.6.0, refreshed 2026-10-14)
+# Handover (state at v0.6.1, refreshed 2026-10-14)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.6.0` here; `v0.5.0` … `v0.9.3` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.6.1` here; `v0.5.0` … `v0.9.3` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -129,4 +129,4 @@ Docker was removed so nothing remains there.
 - **`configure` never applies an unconfirmed guess.** The project most often named in git history is used only if a read-only Jira search finds issues in it; on the owner's 75 repos the unchecked guess would have written `BUG`, `HF`, `P2`, `SP` and `TICKET`. `--no-verify` trusts git history.
 - **The pane's detail follows how much a card needs you (v0.6.0).** Quiet is nearly empty; a running card is one line (title, five-step bar, minutes); only needs-you (amber) and failed (red) expand. `/walkman board` is unchanged: plain text with titles and a legend. `viewport.columns` is the whole terminal, not the pane, so the pane assumes a conservative width and lets `Text` cut the rest; only `viewport.rows` is used (for `+N more`).
 - `configure` scans repos you did not choose, so it ignores their `WALKMAN_SYMPHONY_WORKFLOW_DIR` and `WALKMAN_JIRA_ENV_FILE` settings (a repo could point `uv run` at a directory of its own) and shows a scanned project value only if it is a valid key. `doctor`, `setup` and `card` still read the settings of the repo you run them in; an optional follow-up is to stop trusting those too.
-- The panel redesign (v0.6.0) came from a spec the owner pasted on 2026-10-14. Not done from it, because the data is not there: the permission question's text and a failure's message (the pane says why a card needs you only from known state). Not changed: the redraw interval stays at one second while a card runs, because the strip above the prompt shows a seconds clock; making the strip minutes too would allow 30 to 60 seconds. Possible follow-ups: show the tool name of a pending permission ask (it is in the `tool.check` event), and per-subagent rows from `$.agent.list()` (WALK-28; the Mod API lists each subagent's id, task, type and status).
+- The panel redesign (v0.6.0) came from a spec the owner pasted on 2026-10-14. Not done from it, because the data is not there: the permission question's text and a failure's message (the pane says why a card needs you only from known state). In 0.6.1 the strip above the prompt shows minutes too and the timer runs every 30 seconds on the terminal; it runs every second only after a Desktop signal has been drawn, because that drawing counts seconds. Possible follow-ups: show the tool name of a pending permission ask (it is in the `tool.check` event), and per-subagent rows from `$.agent.list()` (WALK-28; the Mod API lists each subagent's id, task, type and status).
