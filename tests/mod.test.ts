@@ -8,7 +8,7 @@ const PORCELAIN =
 const DF = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/d 488245288 400000000 77594624 84% /\n'
 
 type Issue = { key: string; status: string; summary: string; assignee: string | null }
-interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean }
+interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean; cwd?: { v: string } }
 
 function stubs(on: any, setup: Setup = {}) {
   const files = setup.files ?? {}
@@ -24,7 +24,7 @@ function stubs(on: any, setup: Setup = {}) {
   on('ui.invalidate', () => { invalidated.n++; return { value: undefined } })
   on('ui.toast', (_: any, e: any) => { toasts.push(e.text); return { value: undefined } })
   on('env.get', (_: any, e: any) => ({ value: e.name === 'HOME' ? '/home/u' : setup.env?.[e.name] }))
-  on('session.cwd', () => ({ value: CWD }))
+  on('session.cwd', () => ({ value: setup.cwd?.v ?? CWD }))
   on('fs.exists', (_: any, e: any) => ({ value: e.path in files }))
   on('fs.read', (_: any, e: any) => {
     if (!(e.path in files)) throw new Error('ENOENT')
@@ -35,7 +35,7 @@ function stubs(on: any, setup: Setup = {}) {
     if (cmd === 'git' && a === 'worktree' && ++worktreeCalls > (setup.worktreeOkCalls ?? Infinity)) throw new Error('aborted')
     if (cmd === 'git' && a === 'worktree') return { value: { exitCode: 0, stdout: setup.porcelain ?? PORCELAIN, stderr: '' } }
     if (cmd === 'git' && a === 'rev-parse' && b === '--show-toplevel') counts.revParse++
-    if (cmd === 'git' && a === 'rev-parse' && b === '--show-toplevel') return { value: { exitCode: 0, stdout: CWD + '\n', stderr: '' } }
+    if (cmd === 'git' && a === 'rev-parse' && b === '--show-toplevel') return { value: { exitCode: 0, stdout: (setup.cwd?.v ?? CWD) + '\n', stderr: '' } }
     if ((cmd === 'uv' || cmd === 'uvx') && e.argv.includes('call')) {
       jiraCalls.push(e.argv.join(' '))
       const q = String(e.argv[e.argv.length - 1])
@@ -502,4 +502,20 @@ test('a failing board read says so and keeps the card board', async ($, on) => {
   const out = (await walkman($, 'board')).text
   expect(out).toContain('CF1-195')
   expect(out).toContain('jira board: exit 1')
+})
+
+test('a worktree the session has left keeps no needs-you: a signal in one worktree clears the others (WALK-148)', async ($, on) => {
+  const porcelain = PORCELAIN + '\nworktree /r/.claude/worktrees/b\nHEAD fed\nbranch refs/heads/CF1-196-other-card\n'
+  const cwd = { v: CWD }
+  stubs(on, { porcelain, cwd })
+  on('tool.check', () => ({ decision: 'ask' }))
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await ($ as any).tool.check({ tool: 'Bash', command: 'ls' }) // CF1-195 waits for an answer
+  expect((await walkman($, 'debug')).text).toContain('CF1-195:waiting')
+  cwd.v = '/r/.claude/worktrees/b' // the session moves on, the ask in a was never answered
+  await $.turn.start({ text: 'next', turnId: 't2' })
+  const dbg = (await walkman($, 'debug')).text
+  expect(dbg).toContain('CF1-196:walking')
+  expect(dbg).not.toContain('CF1-195:waiting')
+  expect(dbg).toContain('CF1-195:idle')
 })

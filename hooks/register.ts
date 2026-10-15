@@ -358,7 +358,11 @@ async function mark($: Engine, patch: Partial<{ isWorking: boolean; askPending: 
     const top = await $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd, timeoutMs: 1500 })
     const path = top.exitCode === 0 ? top.stdout.trim() : cwd
     const prev = live.get(path) ?? { isWorking: false, askPending: false, lastTurnFailed: false, sinceMs: 0 }
-    live.set(path, { ...prev, ...patch, sinceMs: await $.clock.now() })
+    const now = await $.clock.now()
+    live.set(path, { ...prev, ...patch, sinceMs: now })
+    // A session is in one worktree at a time: a worktree it has left is no longer running, asking or failed
+    // (an ask left there unanswered stayed red for a day, WALK-148).
+    for (const [other, sig] of live) if (other !== path && (sig.isWorking || sig.askPending || sig.lastTurnFailed)) live.set(other, { isWorking: false, askPending: false, lastTurnFailed: false, sinceMs: now })
     note(`mark ${JSON.stringify(patch)} path=${path} cwd=${cwd}`)
     cache.at = -Infinity // a signal changed: reread on the next draw
     $.ui.invalidate('ui.render')

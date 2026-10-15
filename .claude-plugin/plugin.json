@@ -1,7 +1,7 @@
 {
   "name": "symphony-walkman",
   "displayName": "Symphony Walkman",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Pedestrian-signal board for Claude Code and Claude Desktop: the green walking man marks the Jira card Claude is working on, the red man marks a card waiting for you.",
   "author": { "name": "cloud-f1" },
   "homepage": "https://github.com/cloud-f1/symphony-walkman",
