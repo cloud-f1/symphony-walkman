@@ -93,7 +93,8 @@ const othersLines = (others: readonly JiraIssue[], narrow: boolean): Line[] => {
 // expands into a card of its own, in different colors, so the one thing to act on is the loudest thing on screen.
 
 // One drawn line: `left` as it is, `right` (a time) flush to the right edge when the surface can.
-export type PaneLine = { left: Line; right?: Line }
+// `meter` (a board column) is drawn before `right`: a picture where the terminal can, meterText elsewhere.
+export type PaneLine = { left: Line; right?: Line; meter?: { fraction: number; category: 'To Do' | 'In Progress' | 'Done'; cells: number } }
 export type PaneSize = { columns?: number; rows?: number }
 
 // A whole minute and nothing finer: the pane is for a glance, so it need not redraw every second.
@@ -112,7 +113,7 @@ export function diskBar(usedPct: number, cellCount = 8): string {
 // Terminal cells, not characters: Chinese and other full-width characters take two.
 const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/
 // Text from outside (a Jira title, a branch name) is drawn as plain characters: nothing in it may steer the terminal.
-const plainText = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').trim()
+export const plainText = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').trim()
 const cells = (text: string): number => [...text].reduce((n, c) => n + (WIDE.test(c) ? 2 : 1), 0)
 function clipCells(text: string, max: number): string {
   if (cells(text) <= max) return text
@@ -132,7 +133,8 @@ const PANE_TONE: Record<Light, Tone> = { waiting: 'warning', failed: 'error', wa
 // in plan_ready, nothing else. The question itself is not available, so it is not made up.
 const reasonOf = (r: CardRow): string => (r.runState === 'plan_ready' ? 'plan is ready for your review' : 'a permission question is waiting')
 
-export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now: number, others: readonly JiraIssue[] = [], size: PaneSize = {}): PaneLine[] {
+// `board`: the BOARD lane (jiraboard.ts), the least urgent thing on the pane, so it is the first to go when rows run out.
+export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now: number, others: readonly JiraIssue[] = [], size: PaneSize = {}, board: readonly PaneLine[] = []): PaneLine[] {
   const width = Math.max(24, (size.columns ?? 44) - 2) // the pane has one cell of padding on each side
   const count = (l: Light) => rows.filter((r) => r.light === l).length
   const longestFirst = (l: Light) => rows.filter((r) => r.light === l).sort((a, b) => a.sinceMs - b.sinceMs)
@@ -196,6 +198,7 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
     items.push({ lane: n === 0 ? lane('◌', 'IN JIRA', 'subtle') : undefined, lines: [line], counted: true })
   })
   const extraOthers = others.length - OTHERS_MAX
+  const boardItem: Item | undefined = board.length > 0 ? { lines: [{ left: [] }, ...board] } : undefined
 
   // Fit the rows the surface has: whole items only, then "+N more"; the title and the disk line always stay.
   const budget = size.rows === undefined ? Infinity : Math.max(2 + footer.length, size.rows - 1)
@@ -218,6 +221,8 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
   }
   if (hidden > 0) out.push({ left: [{ text: `  +${hidden + Math.max(0, extraOthers)} more`, tone: 'subtle' }] })
   else if (extraOthers > 0) out.push({ left: [{ text: `  +${extraOthers} more`, tone: 'subtle' }] })
+  // the board only where it fits whole, after everything that can need you
+  if (boardItem && !overflow && out.length + boardItem.lines.length + footer.length <= budget) out.push(...boardItem.lines)
   return [...out, ...footer]
 }
 

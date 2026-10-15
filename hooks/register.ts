@@ -6,7 +6,9 @@ import { cardFromBranch, parseWorktrees } from '../core/card.ts'
 import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf } from '../core/disk.ts'
 import { renderBoard } from '../core/board.ts'
-import { buildJql, mergeJira, parseSearch } from '../core/jira.ts'
+import { buildJql, isProject, mergeJira, parseSearch } from '../core/jira.ts'
+import { BOARD_CAP, boardJql, boardPaneLines, boardText, buildBoard, meterRgba, meterText, parseIssuesJson } from '../core/jiraboard.ts'
+import type { Board, BoardIssue } from '../core/jiraboard.ts'
 import { doctorLines, envNames, hasAnsi } from '../core/doctor.ts'
 import { SW_GIT, SW_REF, VERSION } from '../core/version.ts'
 import type { JiraIssue } from '../core/jira.ts'
@@ -49,9 +51,20 @@ function styled(Box: never, Text: never, line: Line): unknown {
 }
 
 // One pane line: `left` as styled Texts; with `right` (a time), the two sit at opposite edges of the row.
-function paneRow(Box: never, Text: never, line: PaneLine): unknown {
-  if (!line.right) return styled(Box, Text, line.left)
-  return h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, styled(Box, Text, line.left), styled(Box, Text, line.right))
+// A board column's meter: a picture where the surface has Image (it draws pixels on kitty and Ghostty, and its alt
+// text dim anywhere else), the same meter as text where it has none (Claude Desktop).
+const METER_TONE: Record<string, Tone> = { 'To Do': 'subtle', 'In Progress': 'success', Done: 'success' }
+function meter(Text: never, Image: unknown, m: NonNullable<PaneLine['meter']>): unknown {
+  const text = meterText(m.fraction, m.cells)
+  if (typeof Image !== 'function') return h(Text, { color: THEME[METER_TONE[m.category] ?? 'subtle'] }, text)
+  // Image is a leaf: call the constructor directly, since h() would hand it an empty `children`.
+  return (Image as (props: object) => unknown)({ source: meterRgba(m.fraction, m.category), columns: m.cells, rows: 1, alt: text })
+}
+
+function paneRow(Box: never, Text: never, line: PaneLine, Image?: unknown): unknown {
+  if (!line.right && !line.meter) return styled(Box, Text, line.left)
+  const right = h(Box, { flexDirection: 'row' }, ...(line.meter ? [meter(Text, Image, line.meter)] : []), ...(line.right ? [styled(Box, Text, line.right)] : []))
+  return h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, styled(Box, Text, line.left), right)
 }
 
 async function readRunState($: Engine, key: string): Promise<RunState | undefined> {
@@ -106,6 +119,80 @@ async function jiraSettings($: Engine): Promise<{ project: string; dir: string; 
   return { project, dir, envFile }
 }
 
+type SwResult = { ok: true; stdout: string } | { ok: false; error: string }
+
+// Runs one read-only symphony-workflow command. Fixed arguments; the only variable parts are JQL built from
+// validated pieces. With a symphony-workflow clone configured, run it there (the older way); otherwise run the
+// released CLI through uvx with the credentials file, so no clone or `uv sync` is needed. Never rejects.
+async function runSw($: Engine, settings: { dir: string; envFile: string }, args: string[]): Promise<SwResult> {
+  const { dir, envFile } = settings
+  try {
+    let run: { exitCode: number; stdout: string; stderr: string }
+    const { creds, set } = await jiraCreds($)
+    if (dir !== '') {
+      run = await $.process.run(['uv', 'run', '--env-file', '.env', 'symphony-workflow', ...args], { cwd: dir, timeoutMs: 20000 })
+    } else if (creds) {
+      if (!/^https:\/\/[^\s/]+/.test(creds.JIRA_BASE_URL)) return { ok: false, error: 'the Jira site URL must start with https://' }
+      run = await $.process.run(['uvx', '--from', SW_GIT, 'symphony-workflow', ...args], { env: { ...creds }, timeoutMs: 90000 }) // credentials go in the child's environment, never in argv
+    } else if (set.length > 0) {
+      return { ok: false, error: `Jira settings are incomplete (have ${set.join(', ')}; need URL, email and token)` }
+    } else if (envFile === '' || !(await $.fs.exists(envFile))) {
+      return { ok: false, error: `no credentials: set the plugin's Jira URL, email and token, or put them in ${envFile || DEFAULT_ENV_FILE}; run: ${SETUP_COMMAND}` }
+    } else {
+      run = await $.process.run(['uvx', '--env-file', envFile, '--from', SW_GIT, 'symphony-workflow', ...args], { timeoutMs: 90000 })
+    }
+    return run.exitCode === 0 ? { ok: true, stdout: run.stdout } : { ok: false, error: `exit ${run.exitCode}: ${(run.stderr || run.stdout).trim().slice(0, 100)}` }
+  } catch (err) {
+    return { ok: false, error: 'threw: ' + String(err).slice(0, 100) }
+  }
+}
+
+// The project's board (open Story-level issues by status, Done as a count): three read-only queries, one per
+// status category, every BOARD_MS in the background. Slower than the card lookup: a board moves in minutes.
+const BOARD_MS = 300_000
+const boardState: { at: number; project: string; board?: Board; error?: string; inflight?: Promise<void> } = { at: -Infinity, project: '' }
+
+async function fetchBoard($: Engine): Promise<void> {
+  const before = JSON.stringify([boardState.board, boardState.error])
+  try {
+    const settings = await jiraSettings($)
+    const { project } = settings
+    if (!isProject(project)) {
+      boardState.board = undefined
+      boardState.error = undefined
+    } else {
+      const lists: BoardIssue[][] = []
+      let error: string | undefined
+      for (const category of ['To Do', 'In Progress', 'Done'] as const) {
+        const jql = boardJql(project, category) as string
+        const res = await runSw($, settings, ['call', 'search_issues', JSON.stringify({ jql, max_results: BOARD_CAP })])
+        if (!res.ok) {
+          error = res.error
+          break
+        }
+        lists.push(parseIssuesJson(res.stdout))
+      }
+      if (error === undefined) boardState.board = buildBoard({ todo: lists[0] ?? [], inProgress: lists[1] ?? [], done: lists[2] ?? [], cap: BOARD_CAP })
+      boardState.error = error // a failed read keeps the last good board
+    }
+    boardState.project = project
+    boardState.at = await $.clock.now()
+    if (JSON.stringify([boardState.board, boardState.error]) !== before) $.ui.invalidate('ui.render') // redraw only for news
+  } catch (err) {
+    boardState.error = 'threw: ' + String(err).slice(0, 100) // a background read must never reject
+  }
+}
+
+function ensureBoard($: Engine, now: number): Promise<void> | undefined {
+  if (boardState.inflight) return boardState.inflight
+  if (now - boardState.at < (boardState.error ? JIRA_RETRY_MS : BOARD_MS) && now >= boardState.at) return undefined
+  boardState.at = now // an attempt counts, so a read that throws is not restarted on every draw
+  boardState.inflight = fetchBoard($).finally(() => {
+    boardState.inflight = undefined
+  })
+  return boardState.inflight
+}
+
 async function fetchJira($: Engine, keys: string[]): Promise<void> {
   let settings: { project: string; dir: string; envFile: string }
   try {
@@ -115,7 +202,7 @@ async function fetchJira($: Engine, keys: string[]): Promise<void> {
     jira.at = Date.now()
     return
   }
-  const { project, dir, envFile } = settings
+  const { project } = settings
   const jql = buildJql(project, keys)
   if (jql === undefined) {
     jira.issues = []
@@ -128,34 +215,12 @@ async function fetchJira($: Engine, keys: string[]): Promise<void> {
     }
     return
   }
-  try {
-    // Fixed arguments; the only variable part is the JQL built from validated pieces. A search never writes.
-    // With a symphony-workflow clone configured, run it there (the older way); otherwise run the released
-    // CLI through uvx with the credentials file, so no clone or `uv sync` is needed.
-    let run: { exitCode: number; stdout: string; stderr: string } | undefined
-    const { creds, set } = await jiraCreds($)
-    if (dir !== '') {
-      run = await $.process.run(['uv', 'run', '--env-file', '.env', 'symphony-workflow', 'search', jql], { cwd: dir, timeoutMs: 20000 })
-    } else if (creds) {
-      if (!/^https:\/\/[^\s/]+/.test(creds.JIRA_BASE_URL)) jira.error = 'the Jira site URL must start with https://'
-      else run = await $.process.run(['uvx', '--from', SW_GIT, 'symphony-workflow', 'search', jql], { env: { ...creds }, timeoutMs: 90000 }) // credentials go in the child's environment, never in argv
-    } else if (set.length > 0) {
-      jira.error = `Jira settings are incomplete (have ${set.join(', ')}; need URL, email and token)`
-    } else if (envFile === '' || !(await $.fs.exists(envFile))) {
-      jira.error = `no credentials: set the plugin's Jira URL, email and token, or put them in ${envFile || DEFAULT_ENV_FILE}; run: ${SETUP_COMMAND}`
-    } else {
-      run = await $.process.run(['uvx', '--env-file', envFile, '--from', SW_GIT, 'symphony-workflow', 'search', jql], { timeoutMs: 90000 })
-    }
-    if (run) {
-      if (run.exitCode === 0) {
-        jira.issues = parseSearch(run.stdout)
-        jira.error = undefined
-      } else {
-        jira.error = `exit ${run.exitCode}: ${(run.stderr || run.stdout).trim().slice(0, 100)}`
-      }
-    }
-  } catch (err) {
-    jira.error = 'threw: ' + String(err).slice(0, 100)
+  const res = await runSw($, settings, ['search', jql])
+  if (res.ok) {
+    jira.issues = parseSearch(res.stdout)
+    jira.error = undefined
+  } else {
+    jira.error = res.error
   }
   try {
     jira.keys = keys.join(',')
@@ -283,6 +348,7 @@ async function load($: Engine, now: number): Promise<void> {
     cache.diskAt = now
   }
   void ensureJira($, now, rows.map((r) => r.key)) // background; never awaited here
+  void ensureBoard($, now)
 }
 
 // Mark the session's current worktree. Unknown (non-card) worktrees are ignored by refresh().
@@ -388,7 +454,7 @@ export function register(on: On, options?: PluginOptions) {
     }
     if (sub === 'debug') {
       await refresh($)
-      return { text: ['Walkman debug', `rows: ${cache.rows.map((r) => r.key + ':' + r.light + '@' + r.worktree).join(', ') || '(none)'}`, `live: ${[...live.entries()].map(([k, v]) => k + '=' + JSON.stringify(v)).join('; ') || '(none)'}`, `read: ${cache.why ?? '(none)'}`, `band renders: ${renders}`, `jira: ${jira.issues.length} issues, last read ${jira.at === -Infinity ? 'never' : 'ok'}${jira.error ? ', error ' + jira.error : ''}`, ...trace].join('\n') }
+      return { text: ['Walkman debug', `rows: ${cache.rows.map((r) => r.key + ':' + r.light + '@' + r.worktree).join(', ') || '(none)'}`, `live: ${[...live.entries()].map(([k, v]) => k + '=' + JSON.stringify(v)).join('; ') || '(none)'}`, `read: ${cache.why ?? '(none)'}`, `band renders: ${renders}`, `jira: ${jira.issues.length} issues, last read ${jira.at === -Infinity ? 'never' : 'ok'}${jira.error ? ', error ' + jira.error : ''}`, `board: ${boardState.board ? `${boardState.project} ${boardState.board.columns.length} columns, ${boardState.board.open} open, ${boardState.board.done.count} done` : 'none'}${boardState.error ? ', error ' + boardState.error : ''}`,...trace].join('\n') }
     }
     if (sub === 'version') return { text: await versionText($) }
     if (sub === 'doctor') return { text: await doctorText($) }
@@ -413,20 +479,29 @@ export function register(on: On, options?: PluginOptions) {
       const first = ensureJira($, await $.clock.now(), cache.rows.map((r) => r.key))
       if (first) await Promise.race([first, new Promise<void>((resolve) => $.clock.after(8000, () => resolve()))])
     }
+    if (!boardState.board) {
+      // the same few seconds for the first board (three queries); after that it refreshes in the background
+      const first = ensureBoard($, await $.clock.now()) ?? boardState.inflight
+      if (first) await Promise.race([first, new Promise<void>((resolve) => $.clock.after(8000, () => resolve()))])
+    }
+    const boardLines = boardState.board ? ['', ...boardText(boardState.project, boardState.board)] : boardState.error ? ['', '(jira board: ' + boardState.error + ')'] : boardState.inflight ? ['', '(jira board still loading; run /walkman board again in a moment)'] : []
     // The host puts "<plugin>:" in front of the first line, so a header line keeps the rows aligned.
     const v = view()
     const lines = renderBoard(v.rows, cache.disk, await $.clock.now(), v.others)
     const linked = (await jiraSettings($).catch(() => ({ project: '', dir: '' }))).project !== ''
-    return { text: ['Walkman board', ...lines, ...(cache.rows.length === 0 && cache.why && !/ git=0\b/.test(cache.why) ? ['(could not read git: ' + cache.why + ')'] : []), ...(jira.error ? ['(jira lookup: ' + jira.error + ')'] : jira.inflight ? ['(jira lookup still running; run /walkman again in a moment)'] : []), ...(linked ? [] : ['', 'Not linked to Jira. Set WALKMAN_JIRA_PROJECT, or run: ' + SETUP_COMMAND]), '', plain(LEGEND)].join('\n') }
+    return { text: ['Walkman board', ...lines, ...(cache.rows.length === 0 && cache.why && !/ git=0\b/.test(cache.why) ? ['(could not read git: ' + cache.why + ')'] : []), ...(jira.error ? ['(jira lookup: ' + jira.error + ')'] : jira.inflight ? ['(jira lookup still running; run /walkman again in a moment)'] : []), ...boardLines, ...(linked ? [] : ['', 'Not linked to Jira. Set WALKMAN_JIRA_PROJECT, or run: ' + SETUP_COMMAND]), '', plain(LEGEND)].join('\n') }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const elements = $.ui.resolve(e) as Record<string, unknown>
+    const { Box, Text } = elements as never as { Box: never; Text: never }
     await refresh($)
     const v = view()
     // viewport.columns is the whole terminal, not this pane, so only the height is used; a title the pane cannot hold is cut by Text itself
-    const lines = stylePane(v.rows, cache.disk, await $.clock.now(), v.others, { rows: e.viewport?.rows })
-    return h(Box, { flexDirection: 'column', paddingX: 1 }, ...lines.map((line) => paneRow(Box as never, Text as never, line))) as RenderElement
+    const lines = stylePane(v.rows, cache.disk, await $.clock.now(), v.others, { rows: e.viewport?.rows }, boardPaneLines(boardState.board, 42))
+    // Image is a terminal-surface element (the table may carry it elsewhere, where it draws nothing)
+    const image = e.surface === 'terminal' ? elements['Image'] : undefined
+    return h(Box, { flexDirection: 'column', paddingX: 1 }, ...lines.map((line) => paneRow(Box, Text, line, image))) as RenderElement
   })
 
   // The always-on strip above the prompt: one text line on the terminal, the signal drawing on Desktop.
