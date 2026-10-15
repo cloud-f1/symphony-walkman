@@ -1,4 +1,4 @@
-# Handover (state at v0.7.0, refreshed 2026-10-15)
+# Handover (state at v0.8.0, refreshed 2026-10-16)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.7.0` here; `v0.5.0` … `v0.11.0` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.8.0` here; `v0.5.0` … `v0.11.0` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -131,3 +131,4 @@ Docker was removed so nothing remains there.
 - `configure` scans repos you did not choose, so it ignores their `WALKMAN_SYMPHONY_WORKFLOW_DIR` and `WALKMAN_JIRA_ENV_FILE` settings (a repo could point `uv run` at a directory of its own) and shows a scanned project value only if it is a valid key. `doctor`, `setup` and `card` still read the settings of the repo you run them in; an optional follow-up is to stop trusting those too.
 - The panel redesign (v0.6.0) came from a spec the owner pasted on 2026-10-14. Not done from it, because the data is not there: the permission question's text and a failure's message (the pane says why a card needs you only from known state). In 0.6.1 the strip above the prompt shows minutes too and the timer runs every 30 seconds on the terminal; it runs every second only after a Desktop signal has been drawn, because that drawing counts seconds. Possible follow-ups: show the tool name of a pending permission ask (it is in the `tool.check` event), and per-subagent rows from `$.agent.list()` (WALK-28; the Mod API lists each subagent's id, task, type and status).
 - The Jira board (v0.7.0, WALK-143) is the owner's option C of 2026-10-15: whole project, open Story-level issues by status column, Done only as a 14-day count; a `▤ BOARD` lane in the pane and a section in `/walkman board`; on kitty/Ghostty the meter is an `Image` (RGBA pixels made in `core/jiraboard.ts`, no font, so text stays terminal text). Not done: Epic labels and subtask progress, because `search_issues` does not return `parent`, issue type or status category. Option A is to add those fields to symphony-workflow's search output (an ADLC ticket), then bump the pin and add them here. The status category comes from running one query per category. `Image` is used on the terminal surface only: in the test host the element table carries an `Image` on Desktop too, and it drew nothing there.
+- The board pane (v0.8.0, WALK-151) is the owner's option A of 2026-10-16, with sideways scrolling: a second pane (`walkman-board`, asks for 120 columns and the keyboard), drawn by `core/boardgrid.ts`. The pane scroll is vertical only, and only a digit or a lowercase letter can be a Button hotkey, so sideways is a column offset moved by `h` / `l` Buttons. Esc closes the pane (`closeOnEscape`), so a driven test that sends Esc loses it. The pane props give the real width (`bodyColumns`), unlike the side pane's viewport. The needs-you card in the side pane stays two lines (owner, same day).

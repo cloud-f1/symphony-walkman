@@ -12,7 +12,7 @@ A [Claude Code](https://claude.com/claude-code) plugin (a native Mod) that answe
 
 Unofficial community project. MIT licensed.
 
-> **Status: v0.7, in use.** Checked in real interactive terminal sessions (pane, band, permission ask, failed turn, Jira lookup through `uvx`, `doctor`, one install for both plugins). **Not yet checked:** the drawings inside Claude Desktop itself (WALK-23) and Windows (WALK-30). Every claim and its date is in [What is verified](#what-is-verified).
+> **Status: v0.8, in use.** Checked in real interactive terminal sessions (pane, band, permission ask, failed turn, Jira lookup through `uvx`, `doctor`, one install for both plugins). **Not yet checked:** the drawings inside Claude Desktop itself (WALK-23) and Windows (WALK-30). Every claim and its date is in [What is verified](#what-is-verified).
 
 ## The signal
 
@@ -69,12 +69,34 @@ disk ▕██░░░░░░▏ 23% · 40 GB free
 - **Board** (a repo linked to Jira): one line per status column of the project's open Story-level issues, with a meter (its share of the open issues) and the count, then how many were done in the last 14 days. On a terminal that draws pictures (kitty, Ghostty) the meter is a small colored bar picture; anywhere else it is the `▰▱` text. It is the least urgent part of the pane, so it is left out whole when the pane has no room.
 - **Room:** rows beyond the pane's height end with `+N more`; a title too long for the pane is cut, never wrapped. `/walkman board` still prints the full text board with titles and a legend.
 
+### The board pane (`/walkman board`)
+
+In a repo linked to a Jira project, `/walkman board` opens a wide pane (it asks for 120 columns; beside the transcript on a terminal 110 columns or wider in fullscreen, above the prompt otherwise) that reads like the Jira board:
+
+```
+RCPM board · 8 open · 93 done (14d)
+TO DO 3                   IN PROGRESS 5             DONE
+────────────────────────  ────────────────────────  ──────────
+┌──────────────────────┐  ┌──────────────────────┐  93
+│ RCPM-582             │  │ ● RCPM-581       <1m │  in 14 days
+│ 公文總表：日期欄可排 │  │ 公文總表搜尋找不到案 │
+│ 序＋加「日期區間」…  │  │ 名（搜尋範圍只含文…  │
+│ alex hsieh           │  │ alex hsieh           │
+└──────────────────────┘  └──────────────────────┘
+```
+
+- One column per status, in board order; each open Story-level issue is a card with its key, two lines of title and the assignee. Done is a count of the last 14 days.
+- **The card Claude works on is lit:** a card whose worktree is running shows `●` and its minutes with a green border, needs-you `⚠` amber, failed `✕` red.
+- **More columns than fit:** whole columns only, and `h` / `l` (or a click on `◀` / `▶`) move them while the pane has the keyboard; the arrows scroll up and down; Esc closes it.
+- Read every five minutes in the background, like the `▤ BOARD` lane. No pane here: the printed board instead.
+
 One command does it all:
 
 | You type | You get |
 |---|---|
 | `/walkman` | The side pane described above. If there is no room for a pane, the printed board instead |
-| `/walkman board` | The board printed into the conversation (plain text, a legend underneath); in a linked repo also the project's Jira board, a section per status column with key, title and assignee |
+| `/walkman board` | In a repo linked to Jira: the **board pane** (below). Otherwise the printed card board |
+| `/walkman board print` | The board printed into the conversation (plain text, a legend underneath); in a linked repo also the project's Jira board, a section per status column with key, title and assignee |
 | `/walkman pane close` | Closes the pane (Esc does too) |
 | `/walkman doctor` | Checks the Jira link, credentials, `uvx` and worktrees, and says how to fix each (never shows a secret) |
 | `/walkman version` | Plugin version, the pinned symphony-workflow release, Claude Code version |
@@ -221,6 +243,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | Panel redesign in 0.6.0 (real session, scratch repo with two card worktrees, project RCPM, 2026-10-14) | Passed: idle, running (`● RUNNING`, one line, `<1m`) and a permission ask (`⚠ NEEDS YOU` card with its reason, `┃` bar, time flush right, toast) were drawn; the real foreground colors were amber `#ffc107` bold for needs-you, grey for zero counters, green for the disk bar. **Not seen in a real session:** a failed card (a stubbed test and the core checks cover it; a real failure takes about four minutes of retries), the `+N more` line, and the toast on screen (the Mod test sees the call). Not changed from the owner's spec: the redraw interval stays at one second while a card runs, because the strip above the prompt still shows a seconds clock |
 | Strip above the prompt in minutes, 0.6.1 (real session, same steps on 0.6.0 and 0.6.1, 2026-10-14) | Passed: during a running turn the strip read `running 0:06` then `0:20` on 0.6.0 and `running <1m` both times on 0.6.1. The 30-second redraw and the one-second Desktop exception are covered by Mod tests on the mock clock, not observed on a real screen |
 | Jira board, 0.7.0 (real session, scratch card worktrees, projects WALK and RCPM, symphony-workflow v0.11.0, 2026-10-15) | Passed: `/walkman board` printed `WALK board · 5 open · 23 done in 14 days` with the five Backlog Stories, titles and assignees; the pane drew `▤ BOARD` with one line per column (RCPM: `To Do 3`, `In Progress 4`, `✓ 93 done · 14d`) above the disk line. That terminal does not draw pictures, so the meter showed as `▰▱` text. **Not seen:** the meter as a picture in Ghostty (a driven session gets no picture support: the engine sent no image command), and a project with more than two columns on a real screen (unit checks cover the order) |
+| Board pane, 0.8.0 (real session, scratch card worktree on RCPM, 2026-10-16) | Passed: at 130 columns the pane docked beside the transcript with `TO DO 3`, `IN PROGRESS 5` and `DONE 93` side by side and Chinese titles wrapped by cell width; at 60 columns it opened above the prompt with `1–2/3` and `l: ▶`, `l` moved it to `2–3/3` and `h` back; during a real turn the card `● RCPM-581 <1m` and its border were green (`#4eba65`, bold) and the others grey. **Not seen:** needs-you and failed cards on the board pane on a real screen (Mod and unit checks cover them) |
 | Windows | **Not run**: no Windows machine. The disk line is skipped there and paths are untested |
 
 ## Develop

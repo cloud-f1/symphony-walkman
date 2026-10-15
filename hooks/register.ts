@@ -15,9 +15,13 @@ import type { JiraIssue } from '../core/jira.ts'
 import { HELP, LEGEND, plain, stylePane, styleBand } from '../core/style.ts'
 import type { Line, PaneLine, Tone } from '../core/style.ts'
 import { signalSvg } from '../core/svg.ts'
+import { boardGrid } from '../core/boardgrid.ts'
+import type { CardLight } from '../core/boardgrid.ts'
 import type { CardRow, Disk, RunState } from '../core/contracts.ts'
 
 const PANE_ID = 'walkman-pane'
+const BOARD_PANE_ID = 'walkman-board'
+let boardOffset = 0 // the first board column the board pane shows; h and l move it
 const SETUP_COMMAND = 'npx --yes github:cloud-f1/symphony-walkman setup'
 const DEFAULT_ENV_FILE = '~/.config/symphony-workflow/.env'
 const REFRESH_MS = 3000 // draws can repeat often; reread git / files at most this often
@@ -406,7 +410,7 @@ export function register(on: On, options?: PluginOptions) {
 
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: 'walkman', description: 'Card board: pane (default), board, doctor, version, help', argumentHint: 'board|pane|pane close|doctor|version|help', immediate: true })
+      await $.command.register({ name: 'walkman', description: 'Card board: pane (default), board, doctor, version, help', argumentHint: 'board|board print|pane|pane close|doctor|version|help', immediate: true })
     } catch {
       // A taken command name must not stop the session from starting.
     }
@@ -459,6 +463,18 @@ export function register(on: On, options?: PluginOptions) {
     if (sub === 'version') return { text: await versionText($) }
     if (sub === 'doctor') return { text: await doctorText($) }
     if (sub === 'help') return { text: ['Walkman', HELP, 'Set up Jira linking: ' + SETUP_COMMAND, plain(LEGEND)].join('\n') }
+    if (sub === 'board' && arg !== 'print') {
+      const linked = (await jiraSettings($).catch(() => ({ project: '' }))).project !== ''
+      if (linked) {
+        void ensureBoard($, await $.clock.now())
+        try {
+          const opened = await $.ui.open({ id: BOARD_PANE_ID, title: 'Jira board', focus: true, closeOnEscape: true, columns: 120, rows: 30 })
+          if (opened.isPlaced) return { text: 'Jira board opened. h / l move the columns, arrows scroll, Esc closes. /walkman board print prints it instead.' }
+        } catch {
+          // no pane here: print the board below
+        }
+      }
+    }
     if (sub && sub !== 'board' && sub !== 'pane') return { text: ['Walkman: unknown option "' + sub + '"', HELP].join('\n') }
     if (sub === 'pane' && arg === 'close') {
       try {
@@ -502,6 +518,39 @@ export function register(on: On, options?: PluginOptions) {
     // Image is a terminal-surface element (the table may carry it elsewhere, where it draws nothing)
     const image = e.surface === 'terminal' ? elements['Image'] : undefined
     return h(Box, { flexDirection: 'column', paddingX: 1 }, ...lines.map((line) => paneRow(Box, Text, line, image))) as RenderElement
+  })
+
+  // The board pane: the project's columns side by side, the card Claude works on lit, h / l move the columns.
+  on('ui.render', { component: 'Pane', requestId: BOARD_PANE_ID }, async ($, e) => {
+    const elements = $.ui.resolve(e) as Record<string, unknown>
+    const { Box, Text, Button } = elements as never as { Box: never; Text: never; Button: never }
+    await refresh($)
+    const now = await $.clock.now()
+    void ensureBoard($, now)
+    const column = (lines: Line[]) => h(Box, { flexDirection: 'column', paddingX: 1 }, ...lines.map((line) => styled(Box, Text, line))) as RenderElement
+    const linked = isProject((await jiraSettings($).catch(() => ({ project: '' }))).project)
+    if (!boardState.board || !linked) {
+      const why = !linked ? 'Not linked to Jira. Set WALKMAN_JIRA_PROJECT, or run: ' + SETUP_COMMAND : boardState.error ? 'jira board: ' + boardState.error : boardState.inflight ? 'reading the Jira board…' : 'Not linked to Jira. Set WALKMAN_JIRA_PROJECT, or run: ' + SETUP_COMMAND
+      return column([[{ text: why, tone: boardState.error ? 'error' : 'subtle' }]])
+    }
+    const lights = new Map<string, CardLight>(cache.rows.map((r) => [r.key, { light: r.light, sinceMs: r.sinceMs }]))
+    const width = (e.props as { bodyColumns?: number }).bodyColumns ?? e.viewport?.columns ?? 120
+    const grid = boardGrid(boardState.board, lights, { width: width - 2, offset: boardOffset, now, project: boardState.project })
+    boardOffset = grid.from // an offset past the end, after the board shrank, snaps back
+    const move = (to: number) => () => {
+      boardOffset = Math.max(0, to)
+      try {
+        $.ui.invalidate('ui.render')
+      } catch {
+        // a redraw is a courtesy
+      }
+    }
+    const buttons: unknown[] = []
+    if (grid.from > 0) buttons.push(h(Button, { key: 'left', label: '◀', hotkey: 'h', plain: true, onPress: move(grid.from - 1) }))
+    if (grid.to < grid.total) buttons.push(h(Button, { key: 'right', label: '▶', hotkey: 'l', plain: true, onPress: move(grid.from + 1) }))
+    const [title, ...rest] = grid.lines
+    const head = h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, styled(Box, Text, title ?? []), h(Box, { flexDirection: 'row' }, ...buttons.flatMap((b, i) => (i === 0 ? [b] : [h(Text, null, '  '), b]))))
+    return h(Box, { flexDirection: 'column', paddingX: 1 }, head, ...rest.map((line) => styled(Box, Text, line))) as RenderElement
   })
 
   // The always-on strip above the prompt: one text line on the terminal, the signal drawing on Desktop.
