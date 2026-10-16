@@ -243,3 +243,13 @@ test('the strip above the prompt shows whole minutes, never seconds', () => {
   assert.ok(!/\d:\d\d/.test(text('walking', 125_000)), 'no m:ss clock')
   assert.equal(plain(styleBand([row({ light: 'idle' })], 90_000)).includes('m'), false, 'an idle card shows no time')
 })
+
+test('a running card lists its subagents under it, at most five, then "+N more" (WALK-28)', () => {
+  const agents = Array.from({ length: 7 }, (_, i) => ({ type: i === 0 ? 'Explore' : 'general-purpose', task: `task ${i}`, light: (i === 1 ? 'waiting' : 'walking') as 'walking' | 'waiting', sinceMs: at(i + 1) }))
+  const t = paneText(stylePane([row({ key: 'W-1', title: 'main', light: 'walking', sinceMs: at(9), agents })], undefined, NOW))
+  const main = t.findIndex((l) => l.includes('W-1'))
+  assert.match(t[main + 1] ?? '', /└ ● Explore {2}task 0 +1m/)
+  assert.match(t[main + 2] ?? '', /└ ⚠ general-purpose {2}task 1/)
+  assert.equal(t.filter((l) => l.includes('└')).length, 5)
+  assert.ok(t.some((l) => l.includes('+2 more agents')))
+})

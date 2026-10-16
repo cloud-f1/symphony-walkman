@@ -8,7 +8,7 @@ const PORCELAIN =
 const DF = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/d 488245288 400000000 77594624 84% /\n'
 
 type Issue = { key: string; status: string; summary: string; assignee: string | null }
-interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean; cwd?: { v: string } }
+interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean; cwd?: { v: string }; dirs?: Record<string, string[]>; alive?: string; agents?: unknown[]; reads?: string[] }
 
 function stubs(on: any, setup: Setup = {}) {
   const files = setup.files ?? {}
@@ -26,7 +26,9 @@ function stubs(on: any, setup: Setup = {}) {
   on('env.get', (_: any, e: any) => ({ value: e.name === 'HOME' ? '/home/u' : setup.env?.[e.name] }))
   on('session.cwd', () => ({ value: setup.cwd?.v ?? CWD }))
   on('fs.exists', (_: any, e: any) => ({ value: e.path in files }))
+  on('fs.list', (_: any, e: any) => ({ value: (setup.dirs?.[e.path] ?? []).map((name) => ({ name, kind: 'file', size: 1, mtimeMs: 0, isLink: false })) }))
   on('fs.read', (_: any, e: any) => {
+    setup.reads?.push(e.path)
     if (!(e.path in files)) throw new Error('ENOENT')
     return { value: files[e.path] }
   })
@@ -45,10 +47,13 @@ function stubs(on: any, setup: Setup = {}) {
     if (cmd === 'uv' || cmd === 'uvx') { jiraCalls.push(e.argv.join(' ')); if (e.init?.env) jiraEnvs.push(e.init.env); return { value: { exitCode: setup.jiraExit ?? 0, stdout: setup.jiraOut ?? '', stderr: setup.jiraExit ? 'Jira API error 401' : '' } } }
     if (cmd === 'claude') return { value: { exitCode: 0, stdout: '2.1.296 (Claude Code)\n', stderr: '' } }
     if (cmd === 'uvx' && a === '--version') return { value: { exitCode: 0, stdout: 'uvx 0.9\n', stderr: '' } }
+    if (cmd === 'ps') return { value: { exitCode: 0, stdout: setup.alive ?? '', stderr: '' } }
     if (cmd === 'df') counts.df++
     if (cmd === 'df') return { value: { exitCode: 0, stdout: DF, stderr: '' } }
     return { value: { exitCode: 127, stdout: '', stderr: '' } }
   })
+  on('agent.list', () => ({ value: setup.agents ?? [] }))
+  on('session.id', () => ({ value: 'me' }))
   on('ui.open', (_: any, e: any) => { panes.push('open:' + e.id); return { value: { isPlaced: true } } })
   on('ui.close', (_: any, e: any) => { panes.push('close:' + e.id); return { value: undefined } })
   on('ui.resolve', () => ({
@@ -613,4 +618,37 @@ test('the board pane ends with its key bar', async ($, on) => {
   stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: BOARD })
   await walkman($, 'board print')
   expect(flat(await boardPane($))).toContain('Esc close')
+})
+
+// ---------- WALK-162: other sessions and subagents ----------
+const SESSIONS = '/home/u/.claude/sessions'
+const record = (pid: number, status: string, cwd = CWD, sessionId = 'other') => JSON.stringify({ pid, sessionId, cwd, status, statusUpdatedAt: 0 })
+
+test('another live session waiting in a card worktree lights it needs-you; the .key files are never read', async ($, on) => {
+  const reads: string[] = []
+  stubs(on, { dirs: { [SESSIONS]: ['77.json', '77.abc123.key', 'notes.txt'] }, files: { [SESSIONS]: '', [SESSIONS + '/77.json']: record(77, 'waiting'), [SESSIONS + '/77.abc123.key']: 'SECRET' }, alive: '77\n', reads })
+  expect((await walkman($, 'debug')).text).toContain('CF1-195:waiting')
+  expect(reads.some((r) => r.endsWith('.key'))).toBe(false)
+  expect(reads.some((r) => r.endsWith('notes.txt'))).toBe(false)
+})
+
+test("a dead session, an idle one and this session's own record light nothing", async ($, on) => {
+  stubs(on, { dirs: { [SESSIONS]: ['1.json', '2.json', '3.json'] }, files: { [SESSIONS]: '', [SESSIONS + '/1.json']: record(1, 'busy'), [SESSIONS + '/2.json']: record(2, 'idle'), [SESSIONS + '/3.json']: record(3, 'busy', CWD, 'me') }, alive: '2\n3\n' })
+  expect((await walkman($, 'debug')).text).toContain('CF1-195:idle')
+})
+
+test('WALKMAN_OTHER_SESSIONS=off reads no session record', async ($, on) => {
+  const reads: string[] = []
+  stubs(on, { env: { WALKMAN_OTHER_SESSIONS: 'off' }, dirs: { [SESSIONS]: ['77.json'] }, files: { [SESSIONS]: '', [SESSIONS + '/77.json']: record(77, 'waiting') }, alive: '77\n', reads })
+  expect((await walkman($, 'debug')).text).toContain('CF1-195:idle')
+  expect(reads.length).toBe(0)
+})
+
+test("this session's subagents show as rows under its running card (WALK-28)", async ($, on) => {
+  stubs(on, { agents: [{ id: 'a1', type: 'Explore', description: 'find the login flow', status: 'running' }, { id: 'a2', type: 'general-purpose', description: 'write tests', status: 'waiting' }] })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const pane = flat(await paneOf($))
+  expect(pane).toContain('Explore')
+  expect(pane).toContain('find the login flow')
+  expect(pane).toContain('└ ')
 })

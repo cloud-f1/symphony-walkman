@@ -20,7 +20,10 @@ export type CardRow = Card & {
   jiraStatus?: string
   why?: string // why it needs you, only from a known event (the tool waiting for approval, a question)
   todo?: { done: number; total: number } // the session's TodoWrite list, while the card runs
+  agents?: AgentRow[] // the session's subagents (WALK-28), most recent first
 }
+
+export type AgentRow = { type: string; task: string; light: Light; sinceMs: number }
 
 export type Disk = { freeGb: number; usedPct: number }
 

@@ -12,7 +12,7 @@ A [Claude Code](https://claude.com/claude-code) plugin (a native Mod) that answe
 
 Unofficial community project. MIT licensed.
 
-> **Status: v0.9, in use.** Checked in real interactive terminal sessions (side pane, board pane, strip above the prompt, permission ask, failed turn, Jira through `uvx`, `doctor`). **Not yet checked:** a session opened inside Claude Desktop itself (WALK-23) and Windows (WALK-30). A terminal session watched from Desktop through Remote Control shows only the commands' text, not the panes. Every claim and its date is in [What is verified](#what-is-verified).
+> **Status: v0.10, in use.** Checked in real interactive terminal sessions (side pane, board pane, strip above the prompt, permission ask, failed turn, Jira through `uvx`, `doctor`). **Not yet checked:** a session opened inside Claude Desktop itself (WALK-23) and Windows (WALK-30). A terminal session watched from Desktop through Remote Control shows only the commands' text, not the panes. Every claim and its date is in [What is verified](#what-is-verified).
 
 ## Start in three minutes
 
@@ -61,6 +61,7 @@ jira ▕████████▏ ○ 3  ● 1  ✓ 28                  2m ago
 ┃  Bash is waiting for your approval
 ● RUNNING
 ● WALK-129  Real session check…   3/5 ██░░░ 12m
+  └ ● Explore  find the login flow           2m
 ✓ 3 done · ○ 1 idle
 ◌ IN JIRA
   WALK-27   Per-subagent rows
@@ -72,7 +73,8 @@ jira ▕████████▏ ○ 3  ● 1  ✓ 28                  2m ago
 - **Title row:** how many cards are `⚠` needs you, `✕` failed, `●` running, `✓` done (a zero is dim).
 - **Meters (always on top):** the disk (amber from 80% used, red from 90%) and, in a repo linked to Jira, one bar for the project (to do grey, in progress green, done in 14 days), its counts and how long ago it was read.
 - **Needs you** (amber) and **failed** (red) expand into cards, the longest-waiting first. The second line says why, only from what is known: the tool waiting for approval (its name only, never its input), a question Claude asked you (`AskUserQuestion`), or a symphony run in `plan_ready`.
-- **Running** is one line per card: title, the session's TodoWrite progress (`3/5`), a symphony five-step bar when there is a run, and the minutes. Done and idle fold into one line.
+- **Running** is one line per card: title, the session's TodoWrite progress (`3/5`), a symphony five-step bar when there is a run, and the minutes. Under it, one row per subagent this session started (`└ ● Explore  task  2m`, at most five, a finished one stays 30 s). Done and idle fold into one line.
+- **Other sessions:** a card worktree where another Claude Code session on this machine is working lights green, and amber when that session waits for you, so a window you are not looking at still shows up (with a toast). Walkman reads Claude Code's own session records in `~/.claude/sessions/<pid>.json` (never the `.key` files beside them) and keeps the ones whose process is alive. That format is Claude Code's internal one, so a change there makes this part go quiet, nothing else. Turn it off with `WALKMAN_OTHER_SESSIONS=off`.
 - **In Jira:** in-progress Stories that have no worktree. **Board:** one line per status column with its share and count; on kitty or Ghostty the meter is a small picture (not through tmux or herdr), elsewhere `▰▱` text. It is left out whole when the pane is short.
 - Times are whole minutes, so the pane redraws every 30 seconds while a card runs. A toast `KEY needs you` appears when a card starts needing you. Rows beyond the pane's height end with `+N more`.
 
@@ -264,6 +266,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | Jira board, 0.7.0 (real session, scratch card worktrees, projects WALK and RCPM, symphony-workflow v0.11.0, 2026-10-15) | Passed: `/walkman board` printed `WALK board · 5 open · 23 done in 14 days` with the five Backlog Stories, titles and assignees; the pane drew `▤ BOARD` with one line per column (RCPM: `To Do 3`, `In Progress 4`, `✓ 93 done · 14d`) above the disk line. That terminal does not draw pictures, so the meter showed as `▰▱` text. **Not seen:** the meter as a picture in Ghostty (a driven session gets no picture support: the engine sent no image command), and a project with more than two columns on a real screen (unit checks cover the order) |
 | Board pane, 0.8.0 (real session, scratch card worktree on RCPM, 2026-10-16) | Passed: at 130 columns the pane docked beside the transcript with `TO DO 3`, `IN PROGRESS 5` and `DONE 93` side by side and Chinese titles wrapped by cell width; at 60 columns it opened above the prompt with `1–2/3` and `l: ▶`, `l` moved it to `2–3/3` and `h` back; during a real turn the card `● RCPM-581 <1m` and its border were green (`#4eba65`, bold) and the others grey. **Not seen:** needs-you and failed cards on the board pane on a real screen (Mod and unit checks cover them) |
 | Overview on top, Epic and subtasks, 0.9.0 (real session, scratch card worktree on WALK, symphony-workflow v0.12.0, 2026-10-16) | Passed: the side pane read `WALKMAN …`, then `disk ▕██░░░░░░▏ 25% · 36 GB free`, then `jira ▕████████▏ ○ 3  ● 0  ✓ 28  now`, then a rule; the board pane cards showed `◆ WALK-E1: Pedestri…` and `▱▱▱▱ 0/5`, `▰▱▱▱ 1/4`, `▰▰▰▱ 5/6` for WALK-156, 27 and 20 (the numbers Jira has), and the key bar at the bottom. **Not seen live:** the AskUserQuestion needs-you, the tool name in the reason and TodoWrite `3/5` (Mod tests cover them) |
+| Subagent rows and other sessions, 0.10.0 (real session, scratch repo on WALK, 2026-10-16) | Passed: during a real turn that started a subagent, the pane showed `● WALK-107 …` and under it `└ ● general-purpose  Write numbers o…  <1m` with a green `●`. Other sessions: `/walkman debug` read `7 records, 7 alive (idle idle busy idle idle idle idle)` from this machine's real records. **Not seen:** another session lighting a card on screen, because sessions started by the test driver write no record (seen with and without the child-session variables); mapping, needs-you priority, the `.key` guard and the off switch are covered by checks and Mod tests |
 | A worktree the session left keeps no needs-you, 0.7.1 (2026-10-16) | Mod test only: an ask in one worktree, then a turn in another, leaves the first idle. Seen live before the fix (three worktrees red for 24 hours). **Not seen** in a real session after the fix: moving a real session between worktrees was not driven |
 | Windows | **Not run**: no Windows machine. The disk line is skipped there and paths are untested |
 
