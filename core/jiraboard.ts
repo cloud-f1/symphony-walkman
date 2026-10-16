@@ -1,12 +1,13 @@
 import { clip } from './board.ts'
 import { isProject } from './jira.ts'
-import { plainText } from './style.ts'
-import type { PaneLine, Tone } from './style.ts'
+import { cells, formatMinutes, plainText } from './style.ts'
+import type { PaneLine, Seg, Tone } from './style.ts'
 
 // The project's Jira board, read only: open Story-level issues by status column, Done only as a count.
 // symphony-workflow's `call search_issues` returns key, summary, status and assignee, not the status category,
 // so each category is its own query and a column knows its category from the query that found it.
-export type BoardIssue = { key: string; status: string; summary: string; assignee: string | null }
+// epic / epicName / subDone / subTotal come from symphony-workflow 0.12 (parent, parent_summary, subtasks_*); older: absent / 0.
+export type BoardIssue = { key: string; status: string; summary: string; assignee: string | null; epic?: string; epicName?: string; subDone?: number; subTotal?: number }
 export type Category = 'To Do' | 'In Progress' | 'Done'
 export type Column = { status: string; category: Category; issues: BoardIssue[] }
 export type Board = { columns: Column[]; open: number; done: { count: number; capped: boolean } }
@@ -34,7 +35,16 @@ export function parseIssuesJson(out: string): BoardIssue[] {
   const issues: BoardIssue[] = []
   for (const i of list as Record<string, unknown>[]) {
     if (typeof i?.key !== 'string' || !KEY.test(i.key) || typeof i.status !== 'string') continue
-    issues.push({ key: i.key, status: i.status, summary: typeof i.summary === 'string' ? i.summary : '', assignee: typeof i.assignee === 'string' ? i.assignee : null })
+    const count = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0)
+    const epic = typeof i.parent === 'string' && KEY.test(i.parent) ? i.parent : undefined
+    issues.push({
+      key: i.key,
+      status: i.status,
+      summary: typeof i.summary === 'string' ? i.summary : '',
+      assignee: typeof i.assignee === 'string' ? i.assignee : null,
+      ...(epic ? { epic, ...(typeof i.parent_summary === 'string' ? { epicName: i.parent_summary } : {}) } : {}),
+      ...(count(i.subtasks_total) > 0 ? { subDone: count(i.subtasks_done), subTotal: count(i.subtasks_total) } : {}),
+    })
   }
   return issues
 }
@@ -70,7 +80,11 @@ export function boardText(project: string, board: Board): string[] {
   if (board.columns.length === 0) lines.push('', '  no open Story-level issues')
   for (const col of board.columns) {
     lines.push('', `${plainText(col.status).toUpperCase()} (${col.issues.length})`)
-    for (const i of col.issues) lines.push(`  ${i.key.padEnd(10)} ${clip(plainText(i.summary), 60).padEnd(60)} ${clip(plainText(i.assignee ?? 'unassigned'), 24)}`.trimEnd())
+    for (const i of col.issues) {
+      const subs = i.subTotal ? ` ${i.subDone ?? 0}/${i.subTotal}` : ''
+      lines.push(`  ${i.key.padEnd(10)} ${clip(plainText(i.summary), 54).padEnd(54)} ${subs.padStart(6)} ${clip(plainText(i.assignee ?? 'unassigned'), 24)}`.trimEnd())
+      if (i.epicName) lines.push(`             ◆ ${clip(plainText(i.epicName), 60)}`)
+    }
   }
   return lines
 }
@@ -121,3 +135,26 @@ export function meterRgba(fraction: number, category: Category, width = 64, heig
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
   return { rgba: btoa(bin), width, height }
 }
+
+// The Jira overview line for the top of a pane (htop style): one stacked meter (to do grey, in progress green,
+// done as plain text), the three counts, and how long ago the board was read.
+export function boardOverview(board: Board, ageMs: number, width: number, cellCount = 8): PaneLine {
+  const todo = board.columns.filter((c) => c.category === 'To Do').reduce((n, c) => n + c.issues.length, 0)
+  const doing = board.open - todo
+  const done = board.done.count
+  const all = todo + doing + done
+  const share = (n: number) => (all === 0 || n === 0 ? 0 : Math.max(1, Math.round((n / all) * cellCount)))
+  let [a, b] = [share(todo), share(doing)]
+  while (a + b > cellCount) a > b ? a-- : b--
+  const c = all === 0 ? 0 : cellCount - a - b
+  const right: Seg[] = [{ text: formatMinutes(ageMs).replace('<1m', 'now') + (ageMs < 60_000 ? '' : ' ago'), tone: 'subtle' }]
+  const counts = `○ ${todo}  ● ${doing}  ✓ ${done}${board.done.capped ? '+' : ''}` // to do, in progress, done in 14 days
+  const meter: Seg[] = [{ text: '█'.repeat(a), tone: 'subtle' }, { text: '█'.repeat(b), tone: 'success' }, { text: '█'.repeat(c), tone: 'text' }].filter((s) => s.text !== '')
+  const room = width - cells(plain0(right)) - 1
+  const full: Seg[] = [{ text: 'jira ', tone: 'subtle' }, { text: '▕', tone: 'subtle' }, ...meter, { text: '░'.repeat(all === 0 ? cellCount : 0), tone: 'subtle' }, { text: '▏ ', tone: 'subtle' }, { text: counts, tone: 'subtle' }]
+  if (cells(plain0(full)) <= room) return { left: full, right }
+  return { left: [{ text: 'jira ', tone: 'subtle' }, { text: clipToCells(counts, room - 5), tone: 'subtle' }], right }
+}
+
+const plain0 = (line: Seg[]): string => line.map((s) => s.text).join('')
+const clipToCells = (text: string, max: number): string => (cells(text) <= max ? text : clip(text, Math.max(4, max)))

@@ -376,7 +376,7 @@ test('pane, a permission ask: an amber needs-you card with its reason, a toast o
   const j = flat(await paneOf($))
   expect(j).toContain('NEEDS YOU')
   expect(j).toContain('"color":"warning"')
-  expect(j).toContain('permission question')
+  expect(j).toContain('Bash is waiting for your approval')
   expect(j).not.toContain('"color":"error"')
   await paneOf($)
   expect(s.toasts).toEqual(['CF1-195 needs you'])
@@ -567,4 +567,50 @@ test('a worktree the session has left keeps no needs-you: a signal in one worktr
   expect(dbg).toContain('CF1-196:walking')
   expect(dbg).not.toContain('CF1-195:waiting')
   expect(dbg).toContain('CF1-195:idle')
+})
+
+// ---------- WALK-156: overview on top, more needs-you signals ----------
+test('a question to the person (AskUserQuestion) is needs-you until it is answered', async ($, on) => {
+  stubs(on)
+  let during = ''
+  on('tool.call', async (_: any, e: any) => {
+    if (e.tool === 'AskUserQuestion') during = (await walkman($, 'debug')).text
+    return { result: 'answered' }
+  })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await ($ as any).tool.call({ tool: 'AskUserQuestion', questions: [] })
+  expect(during).toContain('CF1-195:waiting')
+  expect((await walkman($, 'debug')).text).not.toContain('CF1-195:waiting')
+})
+
+test('a TodoWrite list puts done/total on the running card, and an ask names the tool, not its input', async ($, on) => {
+  stubs(on)
+  on('tool.call', () => ({ result: 'ok' }))
+  on('tool.check', () => ({ decision: 'ask' }))
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await ($ as any).tool.call({ tool: 'TodoWrite', todos: [{ content: 'a', status: 'completed' }, { content: 'b', status: 'in_progress' }, { content: 'c', status: 'pending' }] })
+  expect(flat(await paneOf($))).toContain('1/3')
+  await ($ as any).tool.check({ tool: 'Bash', command: 'export TOKEN=hunter2' })
+  const pane = flat(await paneOf($))
+  expect(pane).toContain('Bash is waiting for your approval')
+  expect(pane).not.toContain('hunter2')
+})
+
+test('the side pane puts the disk meter and the Jira overview on top, under the title', async ($, on) => {
+  stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: BOARD })
+  await walkman($, 'board print')
+  const texts: string[] = []
+  const walk = (n: any) => { if (typeof n === 'string') texts.push(n); else for (const c of n?.children ?? []) walk(c) }
+  const pane: any = await paneOf($)
+  const rows = (pane.children as any[]).map((r) => { texts.length = 0; walk(r); return texts.join('') })
+  expect(rows[0]).toContain('WALKMAN')
+  expect(rows[1]).toContain('disk')
+  expect(rows[2]).toContain('jira')
+  expect(rows[2]).toContain('○ 2')
+})
+
+test('the board pane ends with its key bar', async ($, on) => {
+  stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: BOARD })
+  await walkman($, 'board print')
+  expect(flat(await boardPane($))).toContain('Esc close')
 })

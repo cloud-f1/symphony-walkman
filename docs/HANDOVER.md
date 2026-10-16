@@ -1,4 +1,4 @@
-# Handover (state at v0.8.0, refreshed 2026-10-16)
+# Handover (state at v0.9.0, refreshed 2026-10-16)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.8.0` here; `v0.5.0` … `v0.11.0` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.9.0` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -109,7 +109,7 @@ Docker was removed so nothing remains there.
 |---|---|
 | WALK-20 / WALK-23 | Look at the figure in Claude Desktop. |
 | WALK-30 | Windows (disk line and paths). |
-| Pin | `SW_REF` in `core/version.ts` and `SW_GIT` in the CLI say symphony-workflow v0.11.0 (moved from v0.9.3 on 2026-10-15: `search` prints the same three TAB columns and `call search_issues` the same JSON fields: key, id, summary, status, assignee, description). Bump both together, and run a real-session lookup and board. |
+| Pin | `SW_REF` in `core/version.ts` and `SW_GIT` in the CLI say symphony-workflow v0.12.0 (2026-10-16: 0.12.0 adds `issue_type`, `parent`, `parent_summary`, `status_category`, `subtasks_done`/`subtasks_total` to `call search_issues`, ADLC-388; `search` still prints three TAB columns). Bump both together, and run a real-session lookup and board. |
 | CI | `.github/workflows/ci.yml` runs the core checks, `claude plugin test` and `claude plugin validate --strict .` on pushes to main and on pull requests (first green run 2026-10-14, PR #20). The README CI badge shows the `main` branch, so it reads green after the first merge. |
 | WALK-27, 28, 31 | Ideas, not committed: per-subagent rows, a five-step progress bar from the run state. |
 | ADLC-54 | No Sub-tasks (needs its plan from the owner). |
@@ -132,3 +132,4 @@ Docker was removed so nothing remains there.
 - The panel redesign (v0.6.0) came from a spec the owner pasted on 2026-10-14. Not done from it, because the data is not there: the permission question's text and a failure's message (the pane says why a card needs you only from known state). In 0.6.1 the strip above the prompt shows minutes too and the timer runs every 30 seconds on the terminal; it runs every second only after a Desktop signal has been drawn, because that drawing counts seconds. Possible follow-ups: show the tool name of a pending permission ask (it is in the `tool.check` event), and per-subagent rows from `$.agent.list()` (WALK-28; the Mod API lists each subagent's id, task, type and status).
 - The Jira board (v0.7.0, WALK-143) is the owner's option C of 2026-10-15: whole project, open Story-level issues by status column, Done only as a 14-day count; a `▤ BOARD` lane in the pane and a section in `/walkman board`; on kitty/Ghostty the meter is an `Image` (RGBA pixels made in `core/jiraboard.ts`, no font, so text stays terminal text). Not done: Epic labels and subtask progress, because `search_issues` does not return `parent`, issue type or status category. Option A is to add those fields to symphony-workflow's search output (an ADLC ticket), then bump the pin and add them here. The status category comes from running one query per category. `Image` is used on the terminal surface only: in the test host the element table carries an `Image` on Desktop too, and it drew nothing there.
 - The board pane (v0.8.0, WALK-151) is the owner's option A of 2026-10-16, with sideways scrolling: a second pane (`walkman-board`, asks for 120 columns and the keyboard), drawn by `core/boardgrid.ts`. The pane scroll is vertical only, and only a digit or a lowercase letter can be a Button hotkey, so sideways is a column offset moved by `h` / `l` Buttons. Esc closes the pane (`closeOnEscape`), so a driven test that sends Esc loses it. The pane props give the real width (`bodyColumns`), unlike the side pane's viewport. The needs-you card in the side pane stays two lines (owner, same day).
+- v0.9.0 (WALK-156, 2026-10-16): the owner asked for htop style and the overview on top. Disk and a Jira meter moved under the side pane's title (with a rule under them); the board pane got a key bar and the read age; cards show the Epic and subtask progress from symphony-workflow 0.12. From the switchboard research (github.com/wide3751/switchboard, read only): AskUserQuestion counts as needs-you, the reason names the tool waiting for approval (never its input), TodoWrite gives `done/total`. Not taken yet: cross-session lights from `~/.claude/sessions/*.json` (an internal, undocumented format; never read the `*.key` files there) and jump-to-session. Remote Control (a terminal session watched from Desktop or a phone) shows only printed text: no pane, no strip.

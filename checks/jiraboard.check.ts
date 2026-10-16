@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { boardJql, buildBoard, boardPaneLines, boardText, meterRgba, meterText, parseIssuesJson } from '../core/jiraboard.ts'
+import { boardJql, boardOverview, buildBoard, boardPaneLines, boardText, meterRgba, meterText, parseIssuesJson } from '../core/jiraboard.ts'
 import type { BoardIssue } from '../core/jiraboard.ts'
-import { plain, stylePane } from '../core/style.ts'
+import { cells, plain, stylePane } from '../core/style.ts'
 
 const issue = (key: string, status: string, summary = 'a title', assignee: string | null = 'alex hsieh'): BoardIssue => ({ key, status, summary, assignee })
 
@@ -76,11 +76,11 @@ test('pane: no lines at all when there is no board yet', () => {
   assert.deepEqual(boardPaneLines(undefined, 40), [])
 })
 
-test('pane: the board sits after the cards and above the disk line, and goes whole when rows run out', () => {
+test('pane: the board sits after the cards, the disk meter on top, and the board goes whole when rows run out', () => {
   const board = boardPaneLines(buildBoard({ todo: [issue('A-1', 'To Do')], inProgress: [issue('A-2', 'In Progress')], done: [], cap: 100 }), 40)
   const disk = { freeGb: 40, usedPct: 23 }
   const tall = stylePane([], disk, 0, [], { rows: 30 }, board).map((l) => plain(l.left))
-  assert.ok(tall.indexOf('▤ BOARD') > 0 && tall.indexOf('▤ BOARD') < tall.findIndex((l) => l.includes('disk')))
+  assert.ok(tall.findIndex((l) => l.includes('disk')) === 1 && tall.indexOf('▤ BOARD') > 2)
   const short = stylePane([], disk, 0, [], { rows: 4 }, board).map((l) => plain(l.left))
   assert.ok(!short.includes('▤ BOARD'), 'a half board was drawn')
   assert.ok(short.some((l) => l.includes('disk')), 'the disk line must stay')
@@ -104,4 +104,35 @@ test('meter picture: RGBA pixels, colored part in proportion, the rest dim', () 
   assert.deepEqual(px(0), px(9))
   assert.deepEqual(px(10), px(19))
   assert.equal(px(0)[3], 255)
+})
+
+// ---------- WALK-156: Epic, subtasks, overview ----------
+test('parseIssuesJson keeps the Epic and the subtask counts symphony-workflow 0.12 returns', () => {
+  const out = JSON.stringify({ issues: [{ key: 'WALK-20', status: 'Backlog', summary: 's', assignee: null, issue_type: 'Story', parent: 'WALK-1', parent_summary: 'WALK-E1: Pedestrian board', status_category: 'new', subtasks_done: 5, subtasks_total: 6 }] })
+  const [i] = parseIssuesJson(out)
+  assert.equal(i?.epic, 'WALK-1')
+  assert.equal(i?.epicName, 'WALK-E1: Pedestrian board')
+  assert.deepEqual([i?.subDone, i?.subTotal], [5, 6])
+  const old = parseIssuesJson(JSON.stringify({ issues: [{ key: 'A-1', status: 'x', summary: 'y', assignee: null }] }))[0]
+  assert.equal(old?.epic, undefined)
+  assert.deepEqual([old?.subDone, old?.subTotal], [undefined, undefined])
+})
+
+test('the printed board names the Epic and the subtask progress when known', () => {
+  const b = buildBoard({ todo: [{ ...issue('WALK-20', 'Backlog', 'Real-session check'), epic: 'WALK-1', epicName: 'Pedestrian board', subDone: 5, subTotal: 6 }], inProgress: [], done: [], cap: 100 })
+  const text = boardText('WALK', b).join('\n')
+  assert.match(text, /WALK-20 .*5\/6/)
+  assert.match(text, /◆ Pedestrian board/)
+})
+
+test('overview line: one stacked meter for to do, in progress and done, with counts and the read age', () => {
+  const b = buildBoard({ todo: [issue('A-1', 'To Do'), issue('A-2', 'To Do')], inProgress: [issue('A-3', 'In Progress')], done: [issue('A-4', 'Done')], cap: 100 })
+  const line = boardOverview(b, 120_000, 40)
+  const text = plain(line.left)
+  assert.match(text, /^jira /)
+  assert.match(text, /○ 2 {2}● 1 {2}✓ 1/)
+  assert.match(plain(line.right ?? []), /2m ago/)
+  const tones = line.left.filter((s) => /[█]/.test(s.text)).map((s) => s.tone)
+  assert.deepEqual(tones, ['subtle', 'success', 'text'])
+  assert.ok(cells(text) + cells(plain(line.right ?? [])) <= 40)
 })
