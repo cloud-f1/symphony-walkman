@@ -8,7 +8,7 @@ const PORCELAIN =
 const DF = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/d 488245288 400000000 77594624 84% /\n'
 
 type Issue = { key: string; status: string; summary: string; assignee: string | null }
-interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean; cwd?: { v: string }; dirs?: Record<string, string[]>; alive?: string; agents?: unknown[]; reads?: string[] }
+interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean; cwd?: { v: string }; dirs?: Record<string, string[]>; alive?: string; agents?: unknown[]; reads?: string[]; tasklist?: string }
 
 function stubs(on: any, setup: Setup = {}) {
   const files = setup.files ?? {}
@@ -48,6 +48,8 @@ function stubs(on: any, setup: Setup = {}) {
     if (cmd === 'claude') return { value: { exitCode: 0, stdout: '2.1.296 (Claude Code)\n', stderr: '' } }
     if (cmd === 'uvx' && a === '--version') return { value: { exitCode: 0, stdout: 'uvx 0.9\n', stderr: '' } }
     if (cmd === 'ps') return { value: { exitCode: 0, stdout: setup.alive ?? '', stderr: '' } }
+    if (cmd === 'powershell') return { value: { exitCode: 0, stdout: '107374182400\r\n429496729600\r\n', stderr: '' } }
+    if (cmd === 'tasklist') return { value: { exitCode: 0, stdout: setup.tasklist ?? '', stderr: '' } }
     if (cmd === 'df') counts.df++
     if (cmd === 'df') return { value: { exitCode: 0, stdout: DF, stderr: '' } }
     return { value: { exitCode: 127, stdout: '', stderr: '' } }
@@ -651,4 +653,15 @@ test("this session's subagents show as rows under its running card (WALK-28)", a
   expect(pane).toContain('Explore')
   expect(pane).toContain('find the login flow')
   expect(pane).toContain('└ ')
+})
+
+// ---------- WALK-30: Windows branches (run with a Windows environment on a stubbed host; not seen on Windows) ----------
+test('on Windows the disk comes from PowerShell, liveness from tasklist, the sessions folder from USERPROFILE', async ($, on) => {
+  // the stub host runs on POSIX, where `C:/…` is a relative path: drive letters are covered by checks/windows.check.ts
+  const W = '/c/Users/me/.claude/sessions'
+  stubs(on, { env: { OS: 'Windows_NT', USERPROFILE: '/c/Users/me' }, dirs: { [W]: ['77.json'] }, files: { [W]: '', [W + '/77.json']: JSON.stringify({ pid: 77, sessionId: 'x', cwd: CWD, status: 'waiting' }) }, tasklist: '"claude.exe","77","Console","1","1 K"\r\n' })
+  const pane = flat(await paneOf($))
+  expect(pane).toContain('100 GB free')
+  expect(pane).toContain('80%')
+  expect((await walkman($, 'debug')).text).toContain('CF1-195:waiting')
 })

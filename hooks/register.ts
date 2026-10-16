@@ -4,7 +4,7 @@
 import type { EngineInterface as Engine, On, PluginOptions, RenderElement } from 'claude-code' // types only; erased at run time
 import { cardFromBranch, parseWorktrees } from '../core/card.ts'
 import { deriveLight, parseRunState } from '../core/lights.ts'
-import { parseDf } from '../core/disk.ts'
+import { parseDf, parsePsDrive } from '../core/disk.ts'
 import { renderBoard } from '../core/board.ts'
 import { buildJql, isProject, mergeJira, parseSearch } from '../core/jira.ts'
 import { BOARD_CAP, boardJql, boardOverview, boardPaneLines, boardText, buildBoard, meterRgba, meterText, parseIssuesJson } from '../core/jiraboard.ts'
@@ -15,7 +15,7 @@ import type { JiraIssue } from '../core/jira.ts'
 import { HELP, LEGEND, plain, stylePane, styleBand } from '../core/style.ts'
 import type { Line, PaneLine, Tone } from '../core/style.ts'
 import { signalSvg } from '../core/svg.ts'
-import { isRecordName, otherSessionLights, parsePs, parseRecord } from '../core/sessions.ts'
+import { isRecordName, otherSessionLights, parsePs, parseRecord, parseTasklist } from '../core/sessions.ts'
 import type { SessionRecord } from '../core/sessions.ts'
 import { boardGrid } from '../core/boardgrid.ts'
 import type { CardLight } from '../core/boardgrid.ts'
@@ -86,8 +86,13 @@ async function readRunState($: Engine, key: string): Promise<RunState | undefine
 }
 
 async function readDisk($: Engine): Promise<Disk | undefined> {
-  if ((await $.env.get('OS')) === 'Windows_NT') return undefined // df is POSIX; no Windows branch yet
   try {
+    if ((await $.env.get('OS')) === 'Windows_NT') {
+      // Windows (WALK-30): the system drive through PowerShell; df is POSIX only
+      const drive = ((await $.env.get('SystemDrive')) || 'C:').replace(/[^A-Za-z]/g, '').slice(0, 1) || 'C'
+      const run = await $.process.run(['powershell', '-NoProfile', '-Command', `(Get-PSDrive ${drive}).Free; (Get-PSDrive ${drive}).Used`], { timeoutMs: 5000 })
+      return run.exitCode === 0 ? parsePsDrive(run.stdout) : undefined
+    }
     const path = (await expandHome($, option('disk_path', '/'))) || '/'
     const run = await $.process.run(['df', '-Pk', path], { timeoutMs: 1500 })
     return run.exitCode === 0 ? parseDf(run.stdout) : undefined
@@ -339,8 +344,10 @@ async function otherSessions($: Engine, worktrees: string[]): Promise<Map<string
       othersNote = 'off'
       return new Map()
     }
-    const home = (await $.env.get('HOME')) || ''
-    if (!home.startsWith('/')) return new Map()
+    // Claude Code keeps ~/.claude under USERPROFILE on Windows, even where a HOME is set (Git Bash)
+    const onWindows = (await $.env.get('OS')) === 'Windows_NT'
+    const home = ((onWindows && (await $.env.get('USERPROFILE'))) || (await $.env.get('HOME')) || (await $.env.get('USERPROFILE')) || '').replace(/\\/g, '/')
+    if (!/^(?:\/|[A-Za-z]:\/)/.test(home)) return new Map()
     const dir = home + '/.claude/sessions'
     if (!(await $.fs.exists(dir))) {
       othersNote = 'no sessions folder'
@@ -356,9 +363,12 @@ async function otherSessions($: Engine, worktrees: string[]): Promise<Map<string
       othersNote = '0 records'
       return new Map()
     }
-    const ps = await $.process.run(['ps', '-o', 'pid=', '-p', records.map((r) => r.pid).join(',')], { timeoutMs: 1500 })
+    const windows = onWindows
+    const ps = windows
+      ? await $.process.run(['tasklist', '/FO', 'CSV', '/NH'], { timeoutMs: 3000 }) // Windows (WALK-30)
+      : await $.process.run(['ps', '-o', 'pid=', '-p', records.map((r) => r.pid).join(',')], { timeoutMs: 1500 })
     const own = await $.session.id().catch(() => undefined)
-    const alive = parsePs(ps.stdout)
+    const alive = windows ? parseTasklist(ps.stdout) : parsePs(ps.stdout)
     const lights = otherSessionLights(records, alive, worktrees, own)
     othersNote = `${records.length} records, ${records.filter((r) => alive.has(r.pid)).length} alive (${records.filter((r) => alive.has(r.pid)).map((r) => r.status).join(' ')}), ${lights.size} lit`
     return lights
