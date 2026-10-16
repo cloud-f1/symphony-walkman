@@ -149,7 +149,8 @@ export function boardOverview(board: Board, ageMs: number, width: number, cellCo
   const c = all === 0 ? 0 : cellCount - a - b
   const right: Seg[] = [{ text: formatMinutes(ageMs).replace('<1m', 'now') + (ageMs < 60_000 ? '' : ' ago'), tone: 'subtle' }]
   const counts = `○ ${todo}  ● ${doing}  ✓ ${done}${board.done.capped ? '+' : ''}` // to do, in progress, done in 14 days
-  const meter: Seg[] = [{ text: '█'.repeat(a), tone: 'subtle' }, { text: '█'.repeat(b), tone: 'success' }, { text: '█'.repeat(c), tone: 'text' }].filter((s) => s.text !== '')
+  const parts: Seg[] = [{ text: '█'.repeat(a), tone: 'subtle' }, { text: '█'.repeat(b), tone: 'success' }, { text: '█'.repeat(c), tone: 'text' }]
+  const meter = parts.filter((s) => s.text !== '')
   const room = width - cells(plain0(right)) - 1
   const full: Seg[] = [{ text: 'jira ', tone: 'subtle' }, { text: '▕', tone: 'subtle' }, ...meter, { text: '░'.repeat(all === 0 ? cellCount : 0), tone: 'subtle' }, { text: '▏ ', tone: 'subtle' }, { text: counts, tone: 'subtle' }]
   if (cells(plain0(full)) <= room) return { left: full, right }
