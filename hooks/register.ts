@@ -7,7 +7,7 @@ import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf } from '../core/disk.ts'
 import { renderBoard } from '../core/board.ts'
 import { buildJql, isProject, mergeJira, parseSearch } from '../core/jira.ts'
-import { BOARD_CAP, boardJql, boardPaneLines, boardText, buildBoard, meterRgba, meterText, parseIssuesJson } from '../core/jiraboard.ts'
+import { BOARD_CAP, boardJql, boardOverview, boardPaneLines, boardText, buildBoard, meterRgba, meterText, parseIssuesJson } from '../core/jiraboard.ts'
 import type { Board, BoardIssue } from '../core/jiraboard.ts'
 import { doctorLines, envNames, hasAnsi } from '../core/doctor.ts'
 import { SW_GIT, SW_REF, VERSION } from '../core/version.ts'
@@ -29,7 +29,8 @@ const DISK_MS = 30_000 // free space moves slowly: reread it far less often than
 
 // Session-local state. Resets on reload.
 let pluginOptions: Record<string, unknown> = {}
-const live = new Map<string, { isWorking: boolean; askPending: boolean; lastTurnFailed: boolean; sinceMs: number }>()
+type Live = { isWorking: boolean; askPending: boolean; lastTurnFailed: boolean; sinceMs: number; why?: string; todo?: { done: number; total: number } }
+const live = new Map<string, Live>()
 const cache: { at: number; rows: CardRow[]; disk?: Disk; diskAt: number; why?: string } = { at: -Infinity, rows: [], diskAt: -Infinity }
 
 function option(name: string, fallback: string): string {
@@ -341,7 +342,7 @@ async function load($: Engine, now: number): Promise<void> {
     const light = deriveLight({ isWorking: sig?.isWorking ?? false, askPending: sig?.askPending ?? false, lastTurnFailed: sig?.lastTurnFailed ?? false, runState })
     const seenKey = `${wt.path}|${light}`
     if (!seen.has(seenKey)) seen.set(seenKey, now)
-    rows.push({ ...card, runState, light, sinceMs: sig?.sinceMs ?? (seen.get(seenKey) as number) })
+    rows.push({ ...card, runState, light, sinceMs: sig?.sinceMs ?? (seen.get(seenKey) as number), ...(light === 'waiting' && sig?.why ? { why: sig.why } : {}), ...(sig?.todo ? { todo: sig.todo } : {}) })
   }
   for (const k of [...seen.keys()]) if (!rows.some((r) => k === `${r.worktree}|${r.light}`)) seen.delete(k)
   cache.rows = rows
@@ -355,15 +356,18 @@ async function load($: Engine, now: number): Promise<void> {
   void ensureBoard($, now)
 }
 
+// A tool's name as the engine gives it, safe to draw: letters, digits and a few separators, at most 40.
+const toolName = (e: unknown): string => String((e as { tool?: unknown }).tool ?? 'a tool').replace(/[^A-Za-z0-9_:.-]/g, '').slice(0, 40) || 'a tool'
+
 // Mark the session's current worktree. Unknown (non-card) worktrees are ignored by refresh().
-async function mark($: Engine, patch: Partial<{ isWorking: boolean; askPending: boolean; lastTurnFailed: boolean }>): Promise<void> {
+async function mark($: Engine, patch: Partial<Omit<Live, 'sinceMs'>>, keepTime = false): Promise<void> {
   try {
     const cwd = await $.session.cwd()
     const top = await $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd, timeoutMs: 1500 })
     const path = top.exitCode === 0 ? top.stdout.trim() : cwd
     const prev = live.get(path) ?? { isWorking: false, askPending: false, lastTurnFailed: false, sinceMs: 0 }
     const now = await $.clock.now()
-    live.set(path, { ...prev, ...patch, sinceMs: now })
+    live.set(path, { ...prev, ...patch, sinceMs: keepTime && prev.sinceMs ? prev.sinceMs : now })
     // A session is in one worktree at a time: a worktree it has left is no longer running, asking or failed
     // (an ask left there unanswered stayed red for a day, WALK-148).
     for (const [other, sig] of live) if (other !== path && (sig.isWorking || sig.askPending || sig.lastTurnFailed)) live.set(other, { isWorking: false, askPending: false, lastTurnFailed: false, sinceMs: now })
@@ -439,15 +443,28 @@ export function register(on: On, options?: PluginOptions) {
   on('tool.check', async ($, e, next) => {
     const verdict = await next(e)
     note(`tool.check verdict=${JSON.stringify((verdict as { decision?: unknown }).decision)}`)
-    if ((verdict as { decision?: unknown }).decision === 'ask') await mark($, { askPending: true })
+    // the reason names the tool only (its input can hold a secret): "Bash is waiting for your approval"
+    if ((verdict as { decision?: unknown }).decision === 'ask') await mark($, { askPending: true, why: `${toolName(e)} is waiting for your approval` })
     return verdict
   })
 
   on('tool.call', async ($, e, next) => {
     // a call running means the ask was answered; with no ask pending there is nothing to clear, and
     // marking would spawn git and force a full reread for every tool call
-    if ([...live.values()].some((v) => v.askPending)) await mark($, { askPending: false })
-    return next(e)
+    if ([...live.values()].some((v) => v.askPending)) await mark($, { askPending: false, why: undefined })
+    const name = toolName(e)
+    if (name === 'TodoWrite') {
+      const todos = (e as { todos?: unknown }).todos
+      if (Array.isArray(todos)) await mark($, { todo: { done: todos.filter((t) => (t as { status?: unknown })?.status === 'completed').length, total: todos.length } }, true)
+    }
+    if (name !== 'AskUserQuestion') return next(e)
+    // a question to the person waits like a permission ask, until it is answered
+    await mark($, { askPending: true, why: 'a question is waiting for your answer' })
+    try {
+      return await next(e)
+    } finally {
+      await mark($, { askPending: false, why: undefined })
+    }
   })
 
   on('command.run', { command: 'walkman' }, async ($, e) => {
@@ -518,7 +535,9 @@ export function register(on: On, options?: PluginOptions) {
     await refresh($)
     const v = view()
     // viewport.columns is the whole terminal, not this pane, so only the height is used; a title the pane cannot hold is cut by Text itself
-    const lines = stylePane(v.rows, cache.disk, await $.clock.now(), v.others, { rows: e.viewport?.rows }, boardPaneLines(boardState.board, 42))
+    const now = await $.clock.now()
+    const top = boardState.board ? [boardOverview(boardState.board, now - boardState.at, 42)] : []
+    const lines = stylePane(v.rows, cache.disk, now, v.others, { rows: e.viewport?.rows }, boardPaneLines(boardState.board, 42), top)
     // Image is a terminal-surface element (the table may carry it elsewhere, where it draws nothing)
     const image = e.surface === 'terminal' ? elements['Image'] : undefined
     return h(Box, { flexDirection: 'column', paddingX: 1 }, ...lines.map((line) => paneRow(Box, Text, line, image))) as RenderElement
@@ -539,7 +558,7 @@ export function register(on: On, options?: PluginOptions) {
     }
     const lights = new Map<string, CardLight>(cache.rows.map((r) => [r.key, { light: r.light, sinceMs: r.sinceMs }]))
     const width = (e.props as { bodyColumns?: number }).bodyColumns ?? e.viewport?.columns ?? 120
-    const grid = boardGrid(boardState.board, lights, { width: width - 2, offset: boardOffset, now, project: boardState.project })
+    const grid = boardGrid(boardState.board, lights, { width: width - 2, offset: boardOffset, now, project: boardState.project, ageMs: now - boardState.at })
     boardOffset = grid.from // an offset past the end, after the board shrank, snaps back
     const move = (to: number) => () => {
       boardOffset = Math.max(0, to)

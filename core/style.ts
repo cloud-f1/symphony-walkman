@@ -132,10 +132,11 @@ const PANE_TONE: Record<Light, Tone> = { waiting: 'warning', failed: 'error', wa
 
 // Why a card needs you, only from what is known: a waiting light comes from a permission ask or from a symphony run
 // in plan_ready, nothing else. The question itself is not available, so it is not made up.
-const reasonOf = (r: CardRow): string => (r.runState === 'plan_ready' ? 'plan is ready for your review' : 'a permission question is waiting')
+const reasonOf = (r: CardRow): string => r.why ?? (r.runState === 'plan_ready' ? 'plan is ready for your review' : 'a permission question is waiting')
 
 // `board`: the BOARD lane (jiraboard.ts), the least urgent thing on the pane, so it is the first to go when rows run out.
-export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now: number, others: readonly JiraIssue[] = [], size: PaneSize = {}, board: readonly PaneLine[] = []): PaneLine[] {
+// `top`: overview lines drawn right under the title (the Jira summary, jiraboard.ts), htop style; they always stay.
+export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now: number, others: readonly JiraIssue[] = [], size: PaneSize = {}, board: readonly PaneLine[] = [], top: readonly PaneLine[] = []): PaneLine[] {
   const width = Math.max(24, (size.columns ?? 44) - 2) // the pane has one cell of padding on each side
   const count = (l: Light) => rows.filter((r) => r.light === l).length
   const longestFirst = (l: Light) => rows.filter((r) => r.light === l).sort((a, b) => a.sinceMs - b.sinceMs)
@@ -148,7 +149,7 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
   const gap: Seg = { text: '  ' }
   const header: PaneLine = { left: [{ text: 'WALKMAN', bold: true }], right: [counter('waiting', 'warning'), gap, counter('failed', 'error'), gap, counter('walking', 'success'), gap, counter('done', 'success')] }
 
-  const footer: PaneLine[] = []
+  const overview: PaneLine[] = [] // htop style: the meters sit under the title
   if (disk) {
     const tone: Tone = disk.usedPct >= 90 ? 'error' : disk.usedPct >= 80 ? 'warning' : 'success'
     const free = `${disk.freeGb} GB free`
@@ -159,8 +160,10 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
       [{ text: 'disk ', tone: 'subtle' }, { text: `${disk.usedPct}%`, tone }, { text: ' · ', tone: 'subtle' }, { text: free, tone: freeTone }],
       [{ text: `${disk.usedPct}% · `, tone }, { text: free, tone: freeTone }],
     ]
-    footer.push({ left: forms.find((f) => cells(plain(f)) <= width) ?? (forms[2] as Line) })
+    overview.push({ left: forms.find((f) => cells(plain(f)) <= width) ?? (forms[2] as Line) })
   }
+  overview.push(...top)
+  const footer: PaneLine[] = []
 
   // The body, as items that stay whole: a lane title belongs to its first item, a card is one or two lines.
   type Item = { lane?: PaneLine; lines: PaneLine[]; counted?: boolean } // `counted`: a card or a Jira row, what "+N more" counts
@@ -181,8 +184,10 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
   failed.forEach((r, i) => items.push({ lane: firstOf('failed', i), lines: card(r, 'failed'), counted: true }))
   running.forEach((r, i) => {
     const steps = progressBar(r.runState)
-    const line = head(r, { text: SYMBOL.walking, tone: 'success', bold: true }, formatMinutes(now - r.sinceMs), steps === '' ? '' : steps + ' ')
-    if (steps !== '') line.right = [{ text: steps + ' ', tone: 'success' }, ...(line.right ?? [])]
+    const todo = r.todo && r.todo.total > 0 ? `${r.todo.done}/${r.todo.total}` : ''
+    const extra = [todo, steps].filter((x) => x !== '').join(' ')
+    const line = head(r, { text: SYMBOL.walking, tone: 'success', bold: true }, formatMinutes(now - r.sinceMs), extra === '' ? '' : extra + ' ')
+    if (extra !== '') line.right = [...(todo ? [{ text: todo + ' ', tone: 'subtle' as const }] : []), ...(steps ? [{ text: steps + ' ', tone: 'success' as const }] : []), ...(line.right ?? [])]
     items.push({ lane: firstOf('walking', i), lines: [line], counted: true })
   })
   if (quiet) {
@@ -202,9 +207,10 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
   const boardItem: Item | undefined = board.length > 0 ? { lines: [{ left: [] }, ...board] } : undefined
 
   // Fit the rows the surface has: whole items only, then "+N more"; the title and the disk line always stay.
-  const budget = size.rows === undefined ? Infinity : Math.max(2 + footer.length, size.rows - 1)
-  const out: PaneLine[] = [header]
-  let used = 1 + footer.length
+  const budget = size.rows === undefined ? Infinity : Math.max(2 + overview.length + footer.length, size.rows - 1)
+  const out: PaneLine[] = [header, ...overview]
+  if (overview.length > 0) out.push({ left: [{ text: '─'.repeat(width), tone: 'subtle' }] })
+  let used = out.length + footer.length
   let hidden = 0
   let overflow = false
   for (let i = 0; i < items.length; i++) {

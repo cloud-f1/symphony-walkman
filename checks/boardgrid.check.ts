@@ -80,3 +80,22 @@ test('Jira text cannot steer the terminal', () => {
   const all = text(boardGrid(b, new Map(), { width: 120, offset: 0, now: 0 }).lines).join('\n')
   assert.ok(!/[\u0000-\u0008\u000b-\u001f\u007f]/.test(all))
 })
+
+test('a card shows its Epic and its subtask progress when known (WALK-156)', () => {
+  const b = buildBoard({ todo: [{ ...issue('WALK-20', 'Backlog', 'Real-session check'), epic: 'WALK-1', epicName: 'WALK-E1: Pedestrian board', subDone: 5, subTotal: 6 }], inProgress: [], done: [], cap: 100 })
+  const all = text(boardGrid(b, new Map(), { width: 120, offset: 0, now: 0 }).lines)
+  assert.ok(all.some((l) => l.includes('◆ WALK-E1: Pedestri')), 'no Epic line')
+  assert.ok(all.some((l) => /▰+▱* 5\/6/.test(l)), 'no subtask meter')
+  const box = all.filter((l) => l.includes('│'))
+  assert.equal(new Set(box.map((l) => cells(l.slice(0, l.lastIndexOf('│') + 1)))).size, 1, 'card lines differ in width')
+})
+
+test('the board pane ends with a key bar, and says how old the read is', () => {
+  const g = boardGrid(board, new Map(), { width: 2 * COLUMN_CELLS + 3, offset: 0, now: 0, ageMs: 180_000 })
+  const all = text(g.lines)
+  assert.match(all[0] ?? '', /3m ago/)
+  assert.match(all.at(-1) ?? '', /h ◀ {2}l ▶ {2}↑↓ scroll {2}Esc close/)
+  const wide = text(boardGrid(board, new Map(), { width: 200, offset: 0, now: 0 }).lines)
+  assert.match(wide.at(-1) ?? '', /↑↓ scroll {2}Esc close/)
+  assert.doesNotMatch(wide.at(-1) ?? '', /h ◀/)
+})

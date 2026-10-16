@@ -18,6 +18,8 @@ export type CardRow = Card & {
   sinceMs: number // when the light last changed (epoch ms)
   title?: string // from the optional Jira lookup
   jiraStatus?: string
+  why?: string // why it needs you, only from a known event (the tool waiting for approval, a question)
+  todo?: { done: number; total: number } // the session's TodoWrite list, while the card runs
 }
 
 export type Disk = { freeGb: number; usedPct: number }

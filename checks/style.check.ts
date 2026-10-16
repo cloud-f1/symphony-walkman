@@ -128,18 +128,19 @@ test('minutes only: <1m, 45m, 1h05m', () => {
 test('the disk bar fills with usage and its tone follows 80% and 90%', () => {
   assert.equal(diskBar(23), '▕██░░░░░░▏')
   assert.equal(diskBar(100), '▕████████▏')
-  const tone = (usedPct: number) => stylePane([row({ light: 'idle' })], { freeGb: 4, usedPct }, NOW).at(-1)?.left.find((x) => x.text.includes('▕'))?.tone
+  const tone = (usedPct: number) => stylePane([row({ light: 'idle' })], { freeGb: 4, usedPct }, NOW)[1]?.left.find((x) => x.text.includes('▕'))?.tone
   assert.equal(tone(23), 'success')
   assert.equal(tone(84), 'warning')
   assert.equal(tone(95), 'error')
 })
 
-test('pane, all idle: only the title, "all quiet" and the disk line, no lane at all', () => {
+test('pane, all idle: the title, the disk meter on top (htop style), a rule, "all quiet", no lane at all', () => {
   const t = paneText(stylePane([row({ light: 'idle' }), row({ key: 'CF1-2', light: 'idle' })], { freeGb: 40, usedPct: 23 }, NOW))
-  assert.equal(t.length, 3, t.join('\n'))
+  assert.equal(t.length, 4, t.join('\n'))
   assert.ok(t[0]?.startsWith('WALKMAN'))
-  assert.ok(t[1]?.includes('✓ all quiet'))
-  assert.ok(t[2]?.includes('23%') && t[2]?.includes('40 GB free'))
+  assert.ok(t[1]?.includes('23%') && t[1]?.includes('40 GB free'))
+  assert.ok(/^─+$/.test(t[2] ?? ''))
+  assert.ok(t[3]?.includes('✓ all quiet'))
   assert.ok(!t.join('\n').match(/NEEDS YOU|FAILED|RUNNING/))
 })
 
@@ -190,7 +191,7 @@ test('pane: more cards than the viewport has rows ends with "+N more" and stays 
   const t = paneText(lines)
   assert.ok(lines.length <= 10, `${lines.length} lines`)
   assert.ok(t.some((l) => /\+\d+ more/.test(l)))
-  assert.ok(t[0]?.startsWith('WALKMAN') && t.at(-1)?.includes('50%'), 'title and disk stay')
+  assert.ok(t[0]?.startsWith('WALKMAN') && t[1]?.includes('50%'), 'title and disk stay on top')
   const shown = t.filter((l) => /R-\d/.test(l)).length
   const more = Number(/\+(\d+) more/.exec(t.join('\n'))?.[1])
   assert.equal(shown + more, 12)

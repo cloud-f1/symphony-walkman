@@ -1,5 +1,5 @@
 import type { Light } from './contracts.ts'
-import { DONE_DAYS } from './jiraboard.ts'
+import { DONE_DAYS, meterText } from './jiraboard.ts'
 import type { Board, Column } from './jiraboard.ts'
 import { cells, clipCells, formatMinutes, plainText } from './style.ts'
 import type { Line, Seg, Tone } from './style.ts'
@@ -12,7 +12,7 @@ const INNER = CARD - 4 // its text, between "│ " and " │"
 export const COLUMN_CELLS = CARD + 2 // a column and the gap after it
 
 export type CardLight = { light: Light; sinceMs: number }
-export type GridOptions = { width: number; offset: number; now: number; project?: string }
+export type GridOptions = { width: number; offset: number; now: number; project?: string; ageMs?: number }
 export type Grid = { lines: Line[]; from: number; to: number; total: number }
 
 // Word wrap by terminal cells into at most `max` lines; a word wider than a line is broken, the last line cut with "…".
@@ -49,12 +49,20 @@ function card(issue: Column['issues'][number], lit: CardLight | undefined, now: 
   const time = on && lit ? formatMinutes(now - lit.sinceMs) : ''
   const gap = Math.max(1, INNER - cells(head) - cells(time))
   const title = wrapCells(plainText(issue.summary), INNER, 2)
-  const who = clipCells(plainText(issue.assignee ?? 'unassigned'), INNER)
+  // subtask progress at the right of the assignee line (symphony-workflow 0.12), e.g. "▰▰▰▱ 5/6"
+  const subs = issue.subTotal ? `${meterText((issue.subDone ?? 0) / issue.subTotal, 4)} ${issue.subDone ?? 0}/${issue.subTotal}` : ''
+  const who = clipCells(plainText(issue.assignee ?? 'unassigned'), INNER - (subs ? cells(subs) + 1 : 0))
+  const whoGap = Math.max(1, INNER - cells(who) - cells(subs))
+  const epic = issue.epicName ?? issue.epic
+  const subsDone = issue.subTotal !== undefined && issue.subDone === issue.subTotal
   return [
     [edge('┌' + '─'.repeat(CARD - 2) + '┐')],
     row([{ text: head, tone: on?.tone ?? 'text', bold: true }, { text: ' '.repeat(gap) }, { text: time, tone: 'subtle' }], cells(head) + gap + cells(time)),
     ...[0, 1].map((i) => row([{ text: title[i] ?? '', tone: 'text' }], cells(title[i] ?? ''))),
-    row([{ text: who, tone: 'subtle' }], cells(who)),
+    ...(epic ? [row([{ text: clipCells('◆ ' + plainText(epic), INNER), tone: 'subtle' }], cells(clipCells('◆ ' + plainText(epic), INNER)))] : []),
+    subs
+      ? row([{ text: who, tone: 'subtle' }, { text: ' '.repeat(whoGap) }, { text: subs, tone: subsDone ? 'success' : 'subtle' }], cells(who) + whoGap + cells(subs))
+      : row([{ text: who, tone: 'subtle' }], cells(who)),
     [edge('└' + '─'.repeat(CARD - 2) + '┘')],
   ]
 }
@@ -91,6 +99,7 @@ export function boardGrid(board: Board, lights: ReadonlyMap<string, CardLight>, 
 
   const doneText = `${board.done.count}${board.done.capped ? '+' : ''} done (${DONE_DAYS}d)`
   const title: Line = [{ text: `${opt.project ? opt.project + ' ' : ''}board`, bold: true }, { text: ` · ${board.open} open · ${doneText}`, tone: 'subtle' }]
+  if (opt.ageMs !== undefined) title.push({ text: ` · read ${opt.ageMs < 60_000 ? 'now' : formatMinutes(opt.ageMs) + ' ago'}`, tone: 'subtle' })
   if (to - from < total) title.push({ text: `  ${from + 1}–${to}/${total}`, tone: 'warning' })
   const lines: Line[] = [title, []]
   if (board.open === 0) lines.push([{ text: 'no open Story-level issues', tone: 'subtle' }], [])
@@ -106,6 +115,11 @@ export function boardGrid(board: Board, lights: ReadonlyMap<string, CardLight>, 
     })
     lines.push(row)
   }
+  // htop's function-key bar: what the keys do, only the ones that do something now
+  const keys: Seg[] = []
+  if (to - from < total) keys.push({ text: 'h ◀  l ▶  ', tone: 'subtle' })
+  keys.push({ text: '↑↓ scroll  Esc close', tone: 'subtle' })
+  lines.push([], keys)
   return { lines, from, to, total }
 }
 
