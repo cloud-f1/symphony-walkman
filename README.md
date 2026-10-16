@@ -12,7 +12,7 @@ A [Claude Code](https://claude.com/claude-code) plugin (a native Mod) that answe
 
 Unofficial community project. MIT licensed.
 
-> **Status: v0.10, in use.** Checked in real interactive terminal sessions (side pane, board pane, strip above the prompt, permission ask, failed turn, Jira through `uvx`, `doctor`). **Not yet checked:** a session opened inside Claude Desktop itself (WALK-23) and Windows (WALK-30). A terminal session watched from Desktop through Remote Control shows only the commands' text, not the panes. Every claim and its date is in [What is verified](#what-is-verified).
+> **Status: v0.10, in use.** Checked in real interactive terminal sessions (side pane, board pane, strip above the prompt, permission ask, failed turn, Jira through `uvx`, `doctor`). **Not yet checked:** a session opened inside Claude Desktop itself (WALK-23) and a real Windows machine (WALK-30; the Windows code is tested on a stubbed host only). A terminal session watched from Desktop through Remote Control shows only the commands' text, not the panes. Every claim and its date is in [What is verified](#what-is-verified).
 
 ## Start in three minutes
 
@@ -124,7 +124,7 @@ Claude cannot type slash commands for you; ask it "which card are you on?" and i
 | Terminal (any) | yes | yes | kitty and Ghostty only, not through tmux or herdr |
 | Claude Desktop, a session opened there | not checked yet (WALK-23) | the signal drawing | no |
 | Desktop or phone watching a terminal session (Remote Control) | no: only the commands' printed text | no | no |
-| Windows | not checked yet (WALK-30); the disk line is left out | | |
+| Windows | not checked on a Windows machine (WALK-30): written and tested on a stubbed host only (disk through PowerShell, other sessions through `tasklist`, `C:\` paths) | | |
 
 ## How it knows the card
 
@@ -268,6 +268,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | Overview on top, Epic and subtasks, 0.9.0 (real session, scratch card worktree on WALK, symphony-workflow v0.12.0, 2026-10-16) | Passed: the side pane read `WALKMAN …`, then `disk ▕██░░░░░░▏ 25% · 36 GB free`, then `jira ▕████████▏ ○ 3  ● 0  ✓ 28  now`, then a rule; the board pane cards showed `◆ WALK-E1: Pedestri…` and `▱▱▱▱ 0/5`, `▰▱▱▱ 1/4`, `▰▰▰▱ 5/6` for WALK-156, 27 and 20 (the numbers Jira has), and the key bar at the bottom. **Not seen live:** the AskUserQuestion needs-you, the tool name in the reason and TodoWrite `3/5` (Mod tests cover them) |
 | Subagent rows and other sessions, 0.10.0 (real session, scratch repo on WALK, 2026-10-16) | Passed: during a real turn that started a subagent, the pane showed `● WALK-107 …` and under it `└ ● general-purpose  Write numbers o…  <1m` with a green `●`. Other sessions: `/walkman debug` read `7 records, 7 alive (idle idle busy idle idle idle idle)` from this machine's real records. **Not seen:** another session lighting a card on screen, because sessions started by the test driver write no record (seen with and without the child-session variables); mapping, needs-you priority, the `.key` guard and the off switch are covered by checks and Mod tests |
 | Release gate, 0.10.1 (dry runs on the repo, 2026-10-16) | Passed: run in a branch worktree, `npm run release:check` failed the git gate (not on `main`, `package.json` changed) and the version gate (`v0.10.0` already tagged here and on origin); with TypeScript missing the types gate failed with "run npm ci" instead of skipping, and after `npm ci` it found a real type error in `core/jiraboard.ts` (fixed in this release). The audit gates passed on the real files. The first real `npm run release` is this version's own tag |
+| Windows branches, 0.10.2 (stubbed host only, 2026-10-16) | Tests pass: the disk from `(Get-PSDrive C).Free; .Used` (107 GB free and 429 GB used reads `100 GB free`, `80%`), live pids from `tasklist /FO CSV /NH`, `C:\…` session folders matched to `C:/…` git worktrees, `USERPROFILE` before `HOME` on Windows. **Not seen:** any of it on a Windows machine |
 | A worktree the session left keeps no needs-you, 0.7.1 (2026-10-16) | Mod test only: an ask in one worktree, then a turn in another, leaves the first idle. Seen live before the fix (three worktrees red for 24 hours). **Not seen** in a real session after the fix: moving a real session between worktrees was not driven |
 | Windows | **Not run**: no Windows machine. The disk line is skipped there and paths are untested |
 

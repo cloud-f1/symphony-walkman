@@ -20,7 +20,7 @@ export function parseRecord(text: string): SessionRecord | undefined {
   const pid = d.pid
   const cwd = d.cwd
   if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return undefined
-  if (typeof cwd !== 'string' || !cwd.startsWith('/')) return undefined
+  if (typeof cwd !== 'string' || !/^(?:\/|[A-Za-z]:[\\/])/.test(cwd)) return undefined // POSIX, or a Windows drive
   return {
     pid,
     sessionId: typeof d.sessionId === 'string' ? d.sessionId : '',
@@ -40,11 +40,28 @@ export function parsePs(out: string): Set<number> {
   return live
 }
 
-// The deepest worktree that holds the folder (a session can sit in a subfolder of its card).
+// One spelling for a path, so git's `C:/x` and a session's `C:\\x` meet: slashes, lower-case drive letter.
+export const normalizePath = (p: string): string => p.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, d: string) => d.toLowerCase() + ':')
+
+// The deepest worktree that holds the folder (a session can sit in a subfolder of its card). Returns the worktree as given.
 export function worktreeOf(cwd: string, worktrees: readonly string[]): string | undefined {
+  const c = normalizePath(cwd)
   let best: string | undefined
-  for (const w of worktrees) if ((cwd === w || cwd.startsWith(w + '/')) && (!best || w.length > best.length)) best = w
+  for (const w of worktrees) {
+    const n = normalizePath(w)
+    if ((c === n || c.startsWith(n + '/')) && (!best || n.length > normalizePath(best).length)) best = w
+  }
   return best
+}
+
+// Windows liveness (WALK-30): `tasklist /FO CSV /NH` prints one quoted CSV row per process, the pid second.
+export function parseTasklist(out: string): Set<number> {
+  const live = new Set<number>()
+  for (const line of out.split(/\r?\n/)) {
+    const m = /^"[^"]*","(\d+)"/.exec(line.trim())
+    if (m) live.add(Number(m[1]))
+  }
+  return live
 }
 
 const STATUS_LIGHT: Record<string, Light> = { busy: 'walking', waiting: 'waiting' }
