@@ -126,6 +126,7 @@ export function clipCells(text: string, max: number): string {
   return out + '…'
 }
 
+const AGENTS_MAX = 5
 const SYMBOL: Record<Light, string> = { waiting: '⚠', failed: '✕', walking: '●', done: '✓', idle: '○' }
 // Amber for "needs you", red for "failed": two different calls for attention.
 const PANE_TONE: Record<Light, Tone> = { waiting: 'warning', failed: 'error', walking: 'success', done: 'success', idle: 'subtle' }
@@ -188,7 +189,15 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
     const extra = [todo, steps].filter((x) => x !== '').join(' ')
     const line = head(r, { text: SYMBOL.walking, tone: 'success', bold: true }, formatMinutes(now - r.sinceMs), extra === '' ? '' : extra + ' ')
     if (extra !== '') line.right = [...(todo ? [{ text: todo + ' ', tone: 'subtle' as const }] : []), ...(steps ? [{ text: steps + ' ', tone: 'success' as const }] : []), ...(line.right ?? [])]
-    items.push({ lane: firstOf('walking', i), lines: [line], counted: true })
+    // its subagents, one row each, under it (WALK-28)
+    const agents = r.agents ?? []
+    const shown = agents.slice(0, AGENTS_MAX).map((a): PaneLine => {
+      const mark = SYMBOL[a.light]
+      const room = Math.max(6, width - 4 - cells(a.type) - 2 - 5)
+      return { left: [{ text: '  └ ', tone: 'subtle' }, { text: mark, tone: PANE_TONE[a.light], bold: true }, { text: ' ' + plainText(a.type), tone: 'text' }, { text: '  ' + clipCells(plainText(a.task), room), tone: 'subtle' }], right: [{ text: formatMinutes(now - a.sinceMs), tone: 'subtle' }] }
+    })
+    if (agents.length > AGENTS_MAX) shown.push({ left: [{ text: `    +${agents.length - AGENTS_MAX} more agents`, tone: 'subtle' }] })
+    items.push({ lane: firstOf('walking', i), lines: [line, ...shown], counted: true })
   })
   if (quiet) {
     items.push({ lines: [{ left: rows.length === 0 ? [{ text: 'no card branch · work in a KEY-<n>-<slug> branch', tone: 'subtle' }] : [{ text: '✓ ', tone: 'success' }, { text: 'all quiet', tone: 'subtle' }] }] })

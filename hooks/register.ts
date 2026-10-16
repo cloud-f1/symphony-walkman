@@ -15,9 +15,11 @@ import type { JiraIssue } from '../core/jira.ts'
 import { HELP, LEGEND, plain, stylePane, styleBand } from '../core/style.ts'
 import type { Line, PaneLine, Tone } from '../core/style.ts'
 import { signalSvg } from '../core/svg.ts'
+import { isRecordName, otherSessionLights, parsePs, parseRecord } from '../core/sessions.ts'
+import type { SessionRecord } from '../core/sessions.ts'
 import { boardGrid } from '../core/boardgrid.ts'
 import type { CardLight } from '../core/boardgrid.ts'
-import type { CardRow, Disk, RunState } from '../core/contracts.ts'
+import type { AgentRow, CardRow, Disk, Light, RunState } from '../core/contracts.ts'
 
 const PANE_ID = 'walkman-pane'
 const BOARD_PANE_ID = 'walkman-board'
@@ -326,6 +328,73 @@ async function listWorktrees($: Engine): Promise<string | undefined> {
   return undefined
 }
 
+
+// Other Claude Code sessions on this machine (WALK-162): their own records in ~/.claude/sessions, only the
+// <pid>.json files (never the .key files beside them), kept when the pid is alive. Off with
+// WALKMAN_OTHER_SESSIONS=off. The format is Claude Code's internal one: anything unexpected is skipped.
+let othersNote = 'not read' // for /walkman debug
+async function otherSessions($: Engine, worktrees: string[]): Promise<Map<string, { light: Light; sinceMs: number }>> {
+  try {
+    if ((await $.env.get('WALKMAN_OTHER_SESSIONS')) === 'off') {
+      othersNote = 'off'
+      return new Map()
+    }
+    const home = (await $.env.get('HOME')) || ''
+    if (!home.startsWith('/')) return new Map()
+    const dir = home + '/.claude/sessions'
+    if (!(await $.fs.exists(dir))) {
+      othersNote = 'no sessions folder'
+      return new Map()
+    }
+    const records: SessionRecord[] = []
+    for (const entry of await $.fs.list(dir)) {
+      if (entry.kind !== 'file' || !isRecordName(entry.name)) continue
+      const r = parseRecord(await $.fs.read(dir + '/' + entry.name).catch(() => ''))
+      if (r) records.push(r)
+    }
+    if (records.length === 0) {
+      othersNote = '0 records'
+      return new Map()
+    }
+    const ps = await $.process.run(['ps', '-o', 'pid=', '-p', records.map((r) => r.pid).join(',')], { timeoutMs: 1500 })
+    const own = await $.session.id().catch(() => undefined)
+    const alive = parsePs(ps.stdout)
+    const lights = otherSessionLights(records, alive, worktrees, own)
+    othersNote = `${records.length} records, ${records.filter((r) => alive.has(r.pid)).length} alive (${records.filter((r) => alive.has(r.pid)).map((r) => r.status).join(' ')}), ${lights.size} lit`
+    return lights
+  } catch (err) {
+    othersNote = 'failed: ' + String(err).slice(0, 80)
+    return new Map() // another session's state is a courtesy
+  }
+}
+
+// This session's subagents (WALK-28): the ones still going, and finished ones for 30 s, each with the time first seen.
+const agentSeen = new Map<string, { at: number; doneAt?: number }>()
+const AGENT_LIGHT: Record<string, Light> = { pending: 'walking', running: 'walking', waiting: 'waiting', idle: 'idle', completed: 'done', failed: 'failed', killed: 'failed' }
+async function subagents($: Engine, now: number): Promise<AgentRow[]> {
+  let list: { id: string; type: string; description: string; status: string }[]
+  try {
+    list = (await $.agent.list()) as never
+  } catch {
+    return []
+  }
+  const rows: AgentRow[] = []
+  const ids = new Set<string>()
+  for (const a of list) {
+    ids.add(a.id)
+    const seen = agentSeen.get(a.id) ?? { at: now }
+    const light = AGENT_LIGHT[a.status] ?? 'idle'
+    const finished = light === 'done' || light === 'failed' || light === 'idle'
+    if (finished && seen.doneAt === undefined) seen.doneAt = now
+    agentSeen.set(a.id, seen)
+    if (finished && now - (seen.doneAt as number) > 30_000) continue
+    rows.push({ type: String(a.type || 'agent'), task: String(a.description || ''), light, sinceMs: seen.at })
+  }
+  for (const id of [...agentSeen.keys()]) if (!ids.has(id)) agentSeen.delete(id)
+  return rows.sort((a, b) => b.sinceMs - a.sinceMs)
+}
+let currentTree = '' // the worktree this session works in, from the last mark()
+
 async function load($: Engine, now: number): Promise<void> {
   const out = await listWorktrees($)
   if (out === undefined) {
@@ -344,6 +413,20 @@ async function load($: Engine, now: number): Promise<void> {
     if (!seen.has(seenKey)) seen.set(seenKey, now)
     rows.push({ ...card, runState, light, sinceMs: sig?.sinceMs ?? (seen.get(seenKey) as number), ...(light === 'waiting' && sig?.why ? { why: sig.why } : {}), ...(sig?.todo ? { todo: sig.todo } : {}) })
   }
+  // other sessions light the cards this session is not working on (its own signals are finer)
+  const others = await otherSessions($, rows.map((r) => r.worktree))
+  for (const r of rows) {
+    const sig = live.get(r.worktree)
+    const mine = sig && (sig.isWorking || sig.askPending || sig.lastTurnFailed)
+    const other = others.get(r.worktree)
+    if (!mine && other && r.light !== 'failed') {
+      r.light = other.light
+      r.sinceMs = other.sinceMs || r.sinceMs
+    }
+  }
+  const agents = await subagents($, now)
+  const home = rows.find((r) => r.worktree === currentTree)
+  if (home && agents.length > 0) home.agents = agents
   for (const k of [...seen.keys()]) if (!rows.some((r) => k === `${r.worktree}|${r.light}`)) seen.delete(k)
   cache.rows = rows
   notifyNeedsYou($, rows)
@@ -367,6 +450,7 @@ async function mark($: Engine, patch: Partial<Omit<Live, 'sinceMs'>>, keepTime =
     const path = top.exitCode === 0 ? top.stdout.trim() : cwd
     const prev = live.get(path) ?? { isWorking: false, askPending: false, lastTurnFailed: false, sinceMs: 0 }
     const now = await $.clock.now()
+    currentTree = path
     live.set(path, { ...prev, ...patch, sinceMs: keepTime && prev.sinceMs ? prev.sinceMs : now })
     // A session is in one worktree at a time: a worktree it has left is no longer running, asking or failed
     // (an ask left there unanswered stayed red for a day, WALK-148).
@@ -479,7 +563,7 @@ export function register(on: On, options?: PluginOptions) {
     }
     if (sub === 'debug') {
       await refresh($)
-      return { text: ['Walkman debug', `rows: ${cache.rows.map((r) => r.key + ':' + r.light + '@' + r.worktree).join(', ') || '(none)'}`, `live: ${[...live.entries()].map(([k, v]) => k + '=' + JSON.stringify(v)).join('; ') || '(none)'}`, `read: ${cache.why ?? '(none)'}`, `band renders: ${renders}`, `jira: ${jira.issues.length} issues, last read ${jira.at === -Infinity ? 'never' : 'ok'}${jira.error ? ', error ' + jira.error : ''}`, `board: ${boardState.board ? `${boardState.project} ${boardState.board.columns.length} columns, ${boardState.board.open} open, ${boardState.board.done.count} done` : 'none'}${boardState.error ? ', error ' + boardState.error : ''}`,...trace].join('\n') }
+      return { text: ['Walkman debug', `rows: ${cache.rows.map((r) => r.key + ':' + r.light + '@' + r.worktree).join(', ') || '(none)'}`, `live: ${[...live.entries()].map(([k, v]) => k + '=' + JSON.stringify(v)).join('; ') || '(none)'}`, `read: ${cache.why ?? '(none)'}`, `band renders: ${renders}`, `other sessions: ${othersNote}`, `jira: ${jira.issues.length} issues, last read ${jira.at === -Infinity ? 'never' : 'ok'}${jira.error ? ', error ' + jira.error : ''}`, `board: ${boardState.board ? `${boardState.project} ${boardState.board.columns.length} columns, ${boardState.board.open} open, ${boardState.board.done.count} done` : 'none'}${boardState.error ? ', error ' + boardState.error : ''}`,...trace].join('\n') }
     }
     if (sub === 'version') return { text: await versionText($) }
     if (sub === 'doctor') return { text: await doctorText($) }
