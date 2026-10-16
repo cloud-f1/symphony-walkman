@@ -39,7 +39,7 @@ export function renderBoard(rows: readonly CardRow[], disk: Disk | undefined, no
     const state = r.runState ?? LABEL[r.light]
     return `${GLYPH[r.light]} ${r.key.padEnd(9)} ${slug.padEnd(28)} ${state.padEnd(13)} ${r.light === 'idle' ? '' : formatElapsed(now - r.sinceMs)}`
   })
-  if (rows.length === 0) lines.push('No card branch found. Work in a KEY-<n>-<slug> branch to light a card.')
+  if (rows.length === 0) lines.push('No card branch found. Work in a KEY-n-slug branch to light a card.')
   if (others.length > 0) {
     lines.push('', 'In progress in Jira')
     for (const i of others.slice(0, OTHERS_MAX)) lines.push(`  ${i.key.padEnd(9)} ${clip(i.summary, 40).padEnd(40)} ${i.status}`)

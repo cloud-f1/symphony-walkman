@@ -139,20 +139,21 @@ export function meterRgba(fraction: number, category: Category, width = 64, heig
 // The Jira overview line for the top of a pane (htop style): one stacked meter (to do grey, in progress green,
 // done as plain text), the three counts, and how long ago the board was read.
 export function boardOverview(board: Board, ageMs: number, width: number, cellCount = 8): PaneLine {
+  // The meter is the open work only (to do grey, in progress green): with most Stories done, a meter that
+  // counted done would be nearly all done, the least urgent part drawn loudest (owner screenshot 2026-10-16).
   const todo = board.columns.filter((c) => c.category === 'To Do').reduce((n, c) => n + c.issues.length, 0)
   const doing = board.open - todo
   const done = board.done.count
-  const all = todo + doing + done
-  const share = (n: number) => (all === 0 || n === 0 ? 0 : Math.max(1, Math.round((n / all) * cellCount)))
-  let [a, b] = [share(todo), share(doing)]
-  while (a + b > cellCount) a > b ? a-- : b--
-  const c = all === 0 ? 0 : cellCount - a - b
+  const open = todo + doing
+  let b = open === 0 || doing === 0 ? 0 : Math.max(1, Math.round((doing / open) * cellCount))
+  let a = open === 0 ? 0 : cellCount - b
+  if (todo > 0 && a === 0) [a, b] = [1, cellCount - 1]
   const right: Seg[] = [{ text: formatMinutes(ageMs).replace('<1m', 'now') + (ageMs < 60_000 ? '' : ' ago'), tone: 'subtle' }]
   const counts = `○ ${todo}  ● ${doing}  ✓ ${done}${board.done.capped ? '+' : ''}` // to do, in progress, done in 14 days
-  const parts: Seg[] = [{ text: '█'.repeat(a), tone: 'subtle' }, { text: '█'.repeat(b), tone: 'success' }, { text: '█'.repeat(c), tone: 'text' }]
+  const parts: Seg[] = [{ text: '█'.repeat(a), tone: 'subtle' }, { text: '█'.repeat(b), tone: 'success' }, { text: '░'.repeat(open === 0 ? cellCount : 0), tone: 'subtle' }]
   const meter = parts.filter((s) => s.text !== '')
   const room = width - cells(plain0(right)) - 1
-  const full: Seg[] = [{ text: 'jira ', tone: 'subtle' }, { text: '▕', tone: 'subtle' }, ...meter, { text: '░'.repeat(all === 0 ? cellCount : 0), tone: 'subtle' }, { text: '▏ ', tone: 'subtle' }, { text: counts, tone: 'subtle' }]
+  const full: Seg[] = [{ text: 'jira ', tone: 'subtle' }, { text: '▕', tone: 'subtle' }, ...meter, { text: '▏ ', tone: 'subtle' }, { text: counts, tone: 'subtle' }]
   if (cells(plain0(full)) <= room) return { left: full, right }
   return { left: [{ text: 'jira ', tone: 'subtle' }, { text: clipToCells(counts, room - 5), tone: 'subtle' }], right }
 }

@@ -200,7 +200,7 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
     items.push({ lane: firstOf('walking', i), lines: [line, ...shown], counted: true })
   })
   if (quiet) {
-    items.push({ lines: [{ left: rows.length === 0 ? [{ text: 'no card branch · work in a KEY-<n>-<slug> branch', tone: 'subtle' }] : [{ text: '✓ ', tone: 'success' }, { text: 'all quiet', tone: 'subtle' }] }] })
+    items.push({ lines: [{ left: rows.length === 0 ? [{ text: 'no card branch · work in a KEY-n-slug branch', tone: 'subtle' }] : [{ text: '✓ ', tone: 'success' }, { text: 'all quiet', tone: 'subtle' }] }] })
   } else if (count('done') + count('idle') > 0) {
     const parts: Seg[] = []
     if (count('done') > 0) parts.push({ text: `✓ ${count('done')} done`, tone: 'subtle' })
@@ -251,7 +251,7 @@ export function styleBoard(rows: readonly CardRow[], disk: Disk | undefined, now
     { text: ' ' + stateText(r).padEnd(13), tone: TONE[r.light] },
     { text: elapsed(r, now), tone: 'subtle' as const },
   ])
-  if (rows.length === 0) lines.push([{ text: 'No card branch found. Work in a KEY-<n>-<slug> branch to light a card.', tone: 'subtle' }])
+  if (rows.length === 0) lines.push([{ text: 'No card branch found. Work in a KEY-n-slug branch to light a card.', tone: 'subtle' }])
   lines.push(...othersLines(others, false), [], ...footer(rows, disk))
   return lines
 }

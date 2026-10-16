@@ -209,7 +209,7 @@ test('pane: needs-you says why only from what is known, failed adds no invented 
 
 test('pane with no card branch says so instead of "all quiet"', () => {
   const t = paneText(stylePane([], undefined, NOW))
-  assert.ok(t.some((l) => l.includes('KEY-<n>-<slug>')))
+  assert.ok(t.some((l) => l.includes('KEY-n-slug')))
   assert.ok(!t.some((l) => l.includes('all quiet')))
 })
 

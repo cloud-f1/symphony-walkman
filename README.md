@@ -54,7 +54,7 @@ Like `htop`, the meters sit on top and the details follow; the details only grow
 ```
 WALKMAN                          ⚠ 1  ✕ 0  ● 1  ✓ 3
 disk ▕██░░░░░░▏ 25% · 36 GB free
-jira ▕████████▏ ○ 3  ● 1  ✓ 28                  2m ago
+jira ▕████████▏ ○ 3  ● 1  ✓ 28                2m ago
 ──────────────────────────────────────────
 ⚠ NEEDS YOU
 ┃ WALK-128  Panel redesign…                  7m
@@ -71,7 +71,7 @@ jira ▕████████▏ ○ 3  ● 1  ✓ 28                  2m ago
 ```
 
 - **Title row:** how many cards are `⚠` needs you, `✕` failed, `●` running, `✓` done (a zero is dim).
-- **Meters (always on top):** the disk (amber from 80% used, red from 90%) and, in a repo linked to Jira, one bar for the project (to do grey, in progress green, done in 14 days), its counts and how long ago it was read.
+- **Meters (always on top):** the disk (amber from 80% used, red from 90%) and, in a repo linked to Jira, one bar for the project's open work (to do grey, in progress green), the counts `○ to do  ● in progress  ✓ done in 14 days` and how long ago it was read.
 - **Needs you** (amber) and **failed** (red) expand into cards, the longest-waiting first. The second line says why, only from what is known: the tool waiting for approval (its name only, never its input), a question Claude asked you (`AskUserQuestion`), or a symphony run in `plan_ready`.
 - **Running** is one line per card: title, the session's TodoWrite progress (`3/5`), a symphony five-step bar when there is a run, and the minutes. Under it, one row per subagent this session started (`└ ● Explore  task  2m`, at most five, a finished one stays 30 s). Done and idle fold into one line.
 - **Other sessions:** a card worktree where another Claude Code session on this machine is working lights green, and amber when that session waits for you, so a window you are not looking at still shows up (with a toast). Walkman reads Claude Code's own session records in `~/.claude/sessions/<pid>.json` (never the `.key` files beside them) and keeps the ones whose process is alive. That format is Claude Code's internal one, so a change there makes this part go quiet, nothing else. Turn it off with `WALKMAN_OTHER_SESSIONS=off`.
@@ -121,7 +121,7 @@ Claude cannot type slash commands for you; ask it "which card are you on?" and i
 
 | Where you run Claude Code | Side pane and board pane | Strip above the prompt | Meter pictures |
 |---|---|---|---|
-| Terminal (any) | yes | yes | kitty and Ghostty only, not through tmux or herdr |
+| Terminal (any) | yes | yes | kitty and Ghostty only (seen in Ghostty); not through tmux or herdr (seen: herdr shows the text) |
 | Claude Desktop, a session opened there | not checked yet (WALK-23) | the signal drawing | no |
 | Desktop or phone watching a terminal session (Remote Control) | no: only the commands' printed text | no | no |
 | Windows | not checked on a Windows machine (WALK-30): written and tested on a stubbed host only (disk through PowerShell, other sessions through `tasklist`, `C:\` paths) | | |
@@ -269,6 +269,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | Subagent rows and other sessions, 0.10.0 (real session, scratch repo on WALK, 2026-10-16) | Passed: during a real turn that started a subagent, the pane showed `● WALK-107 …` and under it `└ ● general-purpose  Write numbers o…  <1m` with a green `●`. Other sessions: `/walkman debug` read `7 records, 7 alive (idle idle busy idle idle idle idle)` from this machine's real records. **Not seen:** another session lighting a card on screen, because sessions started by the test driver write no record (seen with and without the child-session variables); mapping, needs-you priority, the `.key` guard and the off switch are covered by checks and Mod tests |
 | Release gate, 0.10.1 (dry runs on the repo, 2026-10-16) | Passed: run in a branch worktree, `npm run release:check` failed the git gate (not on `main`, `package.json` changed) and the version gate (`v0.10.0` already tagged here and on origin); with TypeScript missing the types gate failed with "run npm ci" instead of skipping, and after `npm ci` it found a real type error in `core/jiraboard.ts` (fixed in this release). The audit gates passed on the real files. The first real `npm run release` is this version's own tag |
 | Windows branches, 0.10.2 (stubbed host only, 2026-10-16) | Tests pass: the disk from `(Get-PSDrive C).Free; .Used` (107 GB free and 429 GB used reads `100 GB free`, `80%`), live pids from `tasklist /FO CSV /NH`, `C:\…` session folders matched to `C:/…` git worktrees, `USERPROFILE` before `HOME` on Windows. **Not seen:** any of it on a Windows machine |
+| Meter pictures and overview polish, 0.10.3 (owner screenshots and a real session, 2026-10-16) | Passed: in plain Ghostty the `▤ BOARD` meter drew as a solid picture; through herdr it fell back to the dashed `▰▱` text, so herdr does not pass images. The `jira` meter, nearly all white with 32 of 33 done, now shows open work only: a real session read `jira ▕████████▏ ○ 2  ● 0  ✓ 32  now` in grey. The hint reads `KEY-n-slug` (a font joined `-<` into an arrow) |
 | A worktree the session left keeps no needs-you, 0.7.1 (2026-10-16) | Mod test only: an ask in one worktree, then a turn in another, leaves the first idle. Seen live before the fix (three worktrees red for 24 hours). **Not seen** in a real session after the fix: moving a real session between worktrees was not driven |
 | Windows | **Not run**: no Windows machine. The disk line is skipped there and paths are untested |
 

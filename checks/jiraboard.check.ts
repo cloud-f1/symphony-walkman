@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { boardJql, boardOverview, buildBoard, boardPaneLines, boardText, meterRgba, meterText, parseIssuesJson } from '../core/jiraboard.ts'
 import type { BoardIssue } from '../core/jiraboard.ts'
 import { cells, plain, stylePane } from '../core/style.ts'
+const paneText = (lines: ReturnType<typeof stylePane>) => lines.map((l) => plain(l.left) + (l.right ? ' ' + plain(l.right) : ''))
 
 const issue = (key: string, status: string, summary = 'a title', assignee: string | null = 'alex hsieh'): BoardIssue => ({ key, status, summary, assignee })
 
@@ -125,7 +126,7 @@ test('the printed board names the Epic and the subtask progress when known', () 
   assert.match(text, /◆ Pedestrian board/)
 })
 
-test('overview line: one stacked meter for to do, in progress and done, with counts and the read age', () => {
+test('overview line: a meter of the open work (to do, in progress), the counts and the read age', () => {
   const b = buildBoard({ todo: [issue('A-1', 'To Do'), issue('A-2', 'To Do')], inProgress: [issue('A-3', 'In Progress')], done: [issue('A-4', 'Done')], cap: 100 })
   const line = boardOverview(b, 120_000, 40)
   const text = plain(line.left)
@@ -133,6 +134,16 @@ test('overview line: one stacked meter for to do, in progress and done, with cou
   assert.match(text, /○ 2 {2}● 1 {2}✓ 1/)
   assert.match(plain(line.right ?? []), /2m ago/)
   const tones = line.left.filter((s) => /[█]/.test(s.text)).map((s) => s.tone)
-  assert.deepEqual(tones, ['subtle', 'success', 'text'])
+  assert.deepEqual(tones, ['subtle', 'success'], 'done is a count, not part of the meter')
+  // owner screenshot 2026-10-16: 32 of 33 done drew an almost white bar; done must not fill the meter
+  const mostlyDone = buildBoard({ todo: [issue('A-1', 'To Do')], inProgress: [], done: Array.from({ length: 32 }, (_, i) => issue(`D-${i}`, 'Done')), cap: 100 })
+  const meter = boardOverview(mostlyDone, 0, 60).left.filter((x) => /[█░]/.test(x.text))
+  assert.deepEqual(meter.map((x) => [x.text.length, x.tone]), [[8, 'subtle']], 'the one open Story fills the meter, in grey')
   assert.ok(cells(text) + cells(plain(line.right ?? [])) <= 40)
+})
+
+test('the hint for a card branch has no "-<" a font could join into an arrow', () => {
+  const t = paneText(stylePane([], undefined, 0)).join('\n')
+  assert.ok(!t.includes('-<'), t)
+  assert.match(t, /KEY-n-slug/)
 })
