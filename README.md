@@ -267,6 +267,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | Board pane, 0.8.0 (real session, scratch card worktree on RCPM, 2026-10-16) | Passed: at 130 columns the pane docked beside the transcript with `TO DO 3`, `IN PROGRESS 5` and `DONE 93` side by side and Chinese titles wrapped by cell width; at 60 columns it opened above the prompt with `1–2/3` and `l: ▶`, `l` moved it to `2–3/3` and `h` back; during a real turn the card `● RCPM-581 <1m` and its border were green (`#4eba65`, bold) and the others grey. **Not seen:** needs-you and failed cards on the board pane on a real screen (Mod and unit checks cover them) |
 | Overview on top, Epic and subtasks, 0.9.0 (real session, scratch card worktree on WALK, symphony-workflow v0.12.0, 2026-10-16) | Passed: the side pane read `WALKMAN …`, then `disk ▕██░░░░░░▏ 25% · 36 GB free`, then `jira ▕████████▏ ○ 3  ● 0  ✓ 28  now`, then a rule; the board pane cards showed `◆ WALK-E1: Pedestri…` and `▱▱▱▱ 0/5`, `▰▱▱▱ 1/4`, `▰▰▰▱ 5/6` for WALK-156, 27 and 20 (the numbers Jira has), and the key bar at the bottom. **Not seen live:** the AskUserQuestion needs-you, the tool name in the reason and TodoWrite `3/5` (Mod tests cover them) |
 | Subagent rows and other sessions, 0.10.0 (real session, scratch repo on WALK, 2026-10-16) | Passed: during a real turn that started a subagent, the pane showed `● WALK-107 …` and under it `└ ● general-purpose  Write numbers o…  <1m` with a green `●`. Other sessions: `/walkman debug` read `7 records, 7 alive (idle idle busy idle idle idle idle)` from this machine's real records. **Not seen:** another session lighting a card on screen, because sessions started by the test driver write no record (seen with and without the child-session variables); mapping, needs-you priority, the `.key` guard and the off switch are covered by checks and Mod tests |
+| Release gate, 0.10.1 (dry runs on the repo, 2026-10-16) | Passed: run in a branch worktree, `npm run release:check` failed the git gate (not on `main`, `package.json` changed) and the version gate (`v0.10.0` already tagged here and on origin); with TypeScript missing the types gate failed with "run npm ci" instead of skipping, and after `npm ci` it found a real type error in `core/jiraboard.ts` (fixed in this release). The audit gates passed on the real files. The first real `npm run release` is this version's own tag |
 | A worktree the session left keeps no needs-you, 0.7.1 (2026-10-16) | Mod test only: an ask in one worktree, then a turn in another, leaves the first idle. Seen live before the fix (three worktrees red for 24 hours). **Not seen** in a real session after the fix: moving a real session between worktrees was not driven |
 | Windows | **Not run**: no Windows machine. The disk line is skipped there and paths are untested |
 
@@ -277,6 +278,32 @@ npm ci
 npm test            # core checks (node --test, with the strip-types flag) then `claude plugin test`
 claude plugin validate --strict .
 ```
+
+### Releasing
+
+A version ships only through the release gate:
+
+```bash
+npm run release:check   # every gate and the audit, a report, nothing written
+npm run release         # the same, then (only if all passed) tag vX.Y.Z, push it, publish a GitHub Release with the report
+```
+
+| Gate | Fails when |
+|---|---|
+| git | not on `main`, a tracked file is changed, or `HEAD` is not `origin/main` |
+| version | the version is already tagged, or `plugin.json`, `package.json`, `core/version.ts` and `marketplace.json` disagree |
+| pin | the pinned symphony-workflow release is not a published tag, or the setup CLI pins another one |
+| tests | `npm test` fails (core checks and Mod tests) |
+| plugin | `claude plugin validate --strict .` fails |
+| types | `tsc` reports an error in `core/` or `hooks/`, or TypeScript or the Mod API types are missing |
+| audit: read only | the Mod runs any symphony-workflow command other than `search` and `call search_issues` |
+| audit: network | the Mod calls `fetch` or `$.http` |
+| audit: secrets | a tracked file holds what looks like a token or a private key |
+| audit: session records | a session record could be read without `isRecordName`, or that guard lets a `.key` name through |
+| audit: verified | the README has no "What is verified" row for the version |
+| audit: package | the manifest, the marketplace entry, the hooks or a skill's `SKILL.md` is missing |
+
+A gate that cannot run (no TypeScript, no network to check a tag) counts as failed. GitHub CI is not part of the gate.
 
 Picking the project up? Read [docs/HANDOVER.md](docs/HANDOVER.md) (links, ticket map, decisions, gotchas). To check behavior the way a person sees it, use the real-session harness in [tools/real-session](tools/real-session/README.md).
 
