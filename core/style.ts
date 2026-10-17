@@ -26,6 +26,7 @@ export const HELP = [
   '/walkman            colored side pane (board if there is no room)',
   '/walkman board      Jira board pane: columns side by side, h / l move them',
   '/walkman board print print the cards and the Jira board',
+  '/walkman demo       seven scenes of made-up cards to watch every animation (d: next)',
   '/walkman pane close close the pane',
   '/walkman doctor     check the Jira link, credentials file, uvx and worktrees',
   '/walkman version    plugin, symphony-workflow and Claude Code versions',

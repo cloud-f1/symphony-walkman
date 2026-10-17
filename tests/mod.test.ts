@@ -779,3 +779,66 @@ test('a short pane leaves the playground out rather than squeezing the cards', a
   await $.turn.start({ text: 'go', turnId: 't1' })
   expect(flat(await paneOf($, { columns: 44, rows: 14 }))).not.toContain('╱')
 })
+
+// ---------- WALK-193: demo mode ----------
+// the button has to be on screen to be pressed: draw the pane, then press
+const pressDemo = async ($: any) => {
+  await ($ as any).ui.render({ surface: 'terminal', component: 'Pane', requestId: 'walkman-pane', props: {}, viewport: { columns: 44, rows: 40 } })
+  return $.ui.press({ plugin: 'symphony-walkman', key: 'demo', requestId: 'walkman-pane', surface: 'terminal' })
+}
+
+test('d walks through the seven demo scenes and then back to the real cards', async ($, on) => {
+  stubs(on)
+  await walkman($, '')
+  expect(flat(await paneOf($, { columns: 44, rows: 40 }))).toContain('demo ▸')
+  await pressDemo($)
+  let pane = flat(await paneOf($, { columns: 44, rows: 40 }))
+  expect(pane).toContain(' DEMO 1/7 · Dawn ')
+  await pressDemo($)
+  pane = flat(await paneOf($, { columns: 44, rows: 40 }))
+  expect(pane).toContain(' DEMO 2/7 · Solo run ')
+  expect(pane).toContain('DEMO-1')
+  for (let i = 3; i <= 7; i++) await pressDemo($)
+  pane = flat(await paneOf($, { columns: 44, rows: 40 }))
+  expect(pane).toContain(' DEMO 7/7 · A day in the life ')
+  expect(pane).toContain('exit ▸')
+  await pressDemo($)
+  pane = flat(await paneOf($, { columns: 44, rows: 40 }))
+  expect(pane).not.toContain(' DEMO ')
+  expect(pane).not.toContain('DEMO-')
+})
+
+test('/walkman demo opens the pane in scene 1; rush hour fills the playground', async ($, on) => {
+  stubs(on)
+  expect((await walkman($, 'demo')).text).toContain('d shows the next one')
+  expect(flat(await paneOf($, { columns: 44, rows: 40 }))).toContain(' DEMO 1/7 · Dawn ')
+  for (let i = 2; i <= 6; i++) await pressDemo($)
+  const pane = flat(await paneOf($, { columns: 44, rows: 60 }))
+  expect(pane).toContain('Rush hour')
+  expect(pane).toMatch(/[⠁-⣿]/) // runners
+  expect(pane).toContain('+3')
+})
+
+test('a demo never reads Jira, never toasts, never changes the pane title, and animates', async ($, on) => {
+  const s = stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: BOARD })
+  await walkman($, 'demo')
+  for (let i = 2; i <= 4; i++) await pressDemo($) // Red light: a made-up card that needs you
+  const callsBefore = s.jiraCalls.length
+  const pane = flat(await paneOf($, { columns: 44, rows: 40 }))
+  expect(pane).toContain('needs you')
+  expect(pane).not.toContain('2 todo') // the Jira line is left out
+  expect(s.toasts.filter((t) => t.includes('DEMO'))).toEqual([])
+  expect(s.titles.some((t) => t.includes('·'))).toBe(false)
+  const before = s.invalidated.n
+  await s.clock.advance(1_000)
+  expect(s.invalidated.n).toBeGreaterThan(before + 2)
+  expect(s.jiraCalls.length).toBe(callsBefore)
+})
+
+test('closing the pane ends the demo', async ($, on) => {
+  stubs(on)
+  await walkman($, 'demo')
+  await walkman($, 'pane close')
+  await walkman($, '')
+  expect(flat(await paneOf($, { columns: 44, rows: 40 }))).not.toContain(' DEMO ')
+})
