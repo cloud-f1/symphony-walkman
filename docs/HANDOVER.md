@@ -1,4 +1,4 @@
-# Handover (state at v0.12.0, refreshed 2026-10-17)
+# Handover (state at v0.12.1, refreshed 2026-10-17)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.12.0` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.12.1` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -138,3 +138,4 @@ Docker was removed so nothing remains there.
 - Windows (v0.10.2, WALK-30): disk through PowerShell `Get-PSDrive` on the system drive, liveness through `tasklist /FO CSV /NH`, paths compared after `normalizePath` (slashes, lower-case drive letter), `USERPROFILE` before `HOME` on Windows. Written on macOS and tested on the stubbed host only: needs a run on a Windows machine before the README can say it works.
 - UI refresh (v0.11.0, WALK-174, owner chose all nine items on 2026-10-17 after a research of the Mod styling API and other mods): thin meters (`meterSegs`, ━ in tone, ─ dim) because █ fills the whole cell; the BOARD lane and the Image meter are gone (duplicate of the jira line; herdr never showed the picture); one pane `walkman-pane` with `paneView` cards/board switched by a `b` Button, so no tab row; needs-you and failed cards in bold boxes of their tone, running cards in one round box (`PaneLine.box`, grouped by `paneBody`); chips via `Seg.bg` + `inverse`; `subtle` is drawn with `dimColor`; the side view uses `bodyColumns`; board cards are real round Boxes from the `boardGrid` model (its `lines` stay as text for the checks); the title counts needs-you (`keepTitle` re-opens the open id; `ui.close` stops it). A narrow pane cuts each Text in a row separately, so long rows (title plus buttons) must be split, not just clipped.
 - Terminal pedestrian signal (v0.12.0, WALK-179): the original ask (a Taiwan crossing light) had only ever existed as the Desktop SVG (`core/svg.ts`, surface `desktop` only). `core/signal.ts` draws it in the cards view from half-block bitmaps (6x8 pixels -> 6x4 cells): green walking (two frames, `FRAME_MS` 500 ms, 250 ms once 3/4 of the TodoWrite list is done), amber standing for needs you (owner's rule: needs you and failed never share a colour), red blinking for failed, grey standing when quiet. The frame comes from the clock, so the core stays pure. `syncTicker` runs at the frame rate only while `paneOpen && paneView === 'cards'` and the lead walks or failed; pane close (event or `/walkman pane close`) and the `b` toggle re-sync it.
+- Green man look and block meters (v0.12.1, WALK-184, owner feedback with a photo of a Taipei crossing and the status line): the figure is a side view (10 x 14 pixels -> 10 x 7 cells, `WALK_A` stride, `WALK_B` passing, `STAND`), with `bigDigits` (3 x 5 font, amber) beside it as the countdown. Meters are back to blocks like the status line: `█` fill and `░` track in the same tone. Do not use `dimColor` for a coloured track: the engine draws it grey, and an empty meter then looks full.

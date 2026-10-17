@@ -47,12 +47,13 @@ export function progressBar(state: CardRow['runState']): string {
   return '━'.repeat(at + 1) + '─'.repeat(STEPS.length - at - 1)
 }
 
-// A thin meter (htop and prismantis style): the filled part ━ in its tone, the rest ─ dim. A full block █ fills the
-// whole cell height and drew the least important line as the loudest thing on the pane (owner screenshot 2026-10-17).
+// A meter like the status line's: █ for the filled part and ░ for the track, both in the meter's tone, so the track reads
+// as a darker band of the same colour in every theme. (0.11.0 tried thin ━─ lines; users found the status-line blocks
+// easier to read, owner feedback 2026-10-17. A dimColor track draws grey, so an empty meter looked full.)
 export function meterSegs(fraction: number, cellCount: number, tone: Tone): Seg[] {
   const f = Math.max(0, Math.min(1, fraction))
   const n = f === 0 ? 0 : Math.max(1, Math.min(cellCount, Math.round(f * cellCount)))
-  return [{ text: '━'.repeat(n), tone }, { text: '─'.repeat(cellCount - n), tone: 'subtle' as const }].filter((s) => s.text !== '')
+  return [{ text: '█'.repeat(n), tone }, { text: '░'.repeat(cellCount - n), tone }].filter((s) => s.text !== '')
 }
 
 // The strip above the prompt: the most urgent card, then how many more.

@@ -125,11 +125,12 @@ test('minutes only: <1m, 45m, 1h05m', () => {
   assert.equal(formatMinutes(65 * MIN), '1h05m')
 })
 
-test('the disk meter is a thin line (━ filled, ─ dim, never a full block) and its tone follows 80% and 90%', () => {
-  assert.equal(diskBar(23), '━━──────')
-  assert.equal(diskBar(100), '━━━━━━━━')
-  assert.ok(!/[█░]/.test(paneText(stylePane([row({ light: 'idle' })], { freeGb: 4, usedPct: 50 }, NOW)).join('')), 'a full block is drawn')
-  const tone = (usedPct: number) => stylePane([row({ light: 'idle' })], { freeGb: 4, usedPct }, NOW)[1]?.left.find((x) => x.text.includes('━'))?.tone
+test('the disk meter is solid blocks like the status line (█ fill, ░ track in the same tone) and its tone follows 80% and 90%', () => {
+  assert.equal(diskBar(23), '██░░░░░░')
+  assert.equal(diskBar(100), '████████')
+  const segs = stylePane([row({ light: 'idle' })], { freeGb: 4, usedPct: 50 }, NOW)[1]?.left.filter((x) => /[█░]/.test(x.text)) ?? []
+  assert.deepEqual(segs.map((x) => [x.text, x.tone]), [['████', 'success'], ['░░░░', 'success']]) // the track in the same tone
+  const tone = (usedPct: number) => stylePane([row({ light: 'idle' })], { freeGb: 4, usedPct }, NOW)[1]?.left.find((x) => x.text.includes('█'))?.tone
   assert.equal(tone(23), 'success')
   assert.equal(tone(84), 'warning')
   assert.equal(tone(95), 'error')

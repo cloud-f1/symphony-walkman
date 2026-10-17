@@ -61,11 +61,11 @@ test('an empty board says so instead of drawing nothing', () => {
   assert.match(boardText('A', buildBoard({ todo: [], inProgress: [], done: [], cap: 100 })).join('\n'), /no open Story-level issues/)
 })
 
-test('meter text: thin, filled then the rest, never wider than asked', () => {
-  assert.equal(meterText(0.5, 8), '━━━━────')
-  assert.equal(meterText(0, 4), '────')
-  assert.equal(meterText(1, 4), '━━━━')
-  assert.equal(meterText(0.01, 4), '━───') // a column with issues never looks empty
+test('meter text: solid blocks like the status line (█ filled, ░ the rest), never wider than asked', () => {
+  assert.equal(meterText(0.5, 8), '████░░░░')
+  assert.equal(meterText(0, 4), '░░░░')
+  assert.equal(meterText(1, 4), '████')
+  assert.equal(meterText(0.01, 4), '█░░░') // a column with issues never looks empty
 })
 
 test('parseIssuesJson keeps the Epic and the subtask counts symphony-workflow 0.12 returns', () => {
@@ -86,17 +86,20 @@ test('the printed board names the Epic and the subtask progress when known', () 
   assert.match(text, /◆ Pedestrian board/)
 })
 
-test('overview line: a thin meter of the open work, the counts in words and the read age', () => {
+test('overview line: a block meter of the open work, the counts in words and the read age', () => {
   const b = buildBoard({ todo: [issue('A-1', 'To Do'), issue('A-2', 'To Do')], inProgress: [issue('A-3', 'In Progress')], done: [issue('A-4', 'Done')], cap: 100 })
   const line = boardOverview(b, 120_000, 44)
   const text = plain(line.left)
-  assert.match(text, /^jira ━━━─────  2 todo  1 doing  1 done$/)
+  assert.match(text, /^jira ███░░░░░  2 todo  1 doing  1 done$/)
+  // status-line style: the filled part bright, the track the same colour dimmed
+  const segs = line.left.filter((s) => /[█░]/.test(s.text))
+  assert.deepEqual(segs.map((s) => [s.text, s.tone]), [['███', 'success'], ['░░░░░', 'success']])
   assert.equal(plain(line.right ?? []), '2m')
-  assert.ok(!/[█░▰▱]/.test(text), 'no block glyphs')
+  assert.ok(!/[▰▱━─]/.test(text), 'no thin or parallelogram meter glyphs')
   assert.ok(cells(text) + cells(plain(line.right ?? [])) <= 44)
   // owner screenshot 2026-10-16: 32 of 33 done drew an almost white bar; done must not fill the meter
   const mostlyDone = buildBoard({ todo: [issue('A-1', 'To Do')], inProgress: [], done: Array.from({ length: 32 }, (_, i) => issue(`D-${i}`, 'Done')), cap: 100 })
-  assert.match(plain(boardOverview(mostlyDone, 0, 44).left), /^jira ────────  1 todo  0 doing  32 done$/)
+  assert.match(plain(boardOverview(mostlyDone, 0, 44).left), /^jira ░░░░░░░░  1 todo  0 doing  32 done$/)
   assert.match(plain(boardOverview(mostlyDone, 0, 26).left), /○1 ●0 ✓32/, 'a narrow pane gets the short form')
 })
 
