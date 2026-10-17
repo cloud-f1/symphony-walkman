@@ -664,7 +664,7 @@ test('one pane, two views: b switches between the cards and the board, and the s
   expect(cards).toContain('board ▸')
   expect(cards).not.toContain('▤ BOARD')
   expect(cards).not.toContain('"type":"Image"')
-  expect(cards).not.toMatch(/[░▰▱]/) // full blocks only draw the signal's figure, never a meter
+  expect(cards).not.toMatch(/[▰▱]/) // no picture-meter fallback glyphs
   await ($ as any).ui.press({ plugin: 'symphony-walkman', key: 'view', requestId: 'walkman-pane', surface: 'terminal' })
   const board = flat(await paneOf($))
   expect(board).toContain('BACKLOG')

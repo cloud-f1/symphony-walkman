@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { FRAME_MS, SIGNAL_ROWS, leadOf, signalFrame, signalLines, signalPace, sprite } from '../core/signal.ts'
+import { FRAME_MS, SIGNAL_ROWS, bigDigits, leadOf, signalFrame, signalLines, signalPace, sprite } from '../core/signal.ts'
 import { plain } from '../core/style.ts'
 import type { CardRow } from '../core/contracts.ts'
 
@@ -91,4 +91,31 @@ test('quiet: a grey man standing, no made-up card', () => {
 test('a long title is cut to the pane, never wrapped', () => {
   const long = 'x'.repeat(200)
   for (const l of signalLines(row({ title: long }), 0, 40)) assert.ok([...plain(l.left)].length <= 36, plain(l.left))
+})
+
+test('the figure is the Taiwan green man: side view, 10 cells wide and 7 rows tall', () => {
+  assert.equal(SIGNAL_ROWS, 7)
+  const walk = signalFrame('walking', 0, 'slow').figure
+  assert.equal(walk.length, 7)
+  assert.ok(walk.every((l) => [...l].length === 10))
+  // a stride: the bottom row has a foot at both edges (back foot left, front foot right)
+  const feet = walk[6] as string
+  assert.notEqual(feet[0], ' ')
+  assert.notEqual(feet[9], ' ')
+  // side view, not a mirror image: the walking figure is not symmetric
+  assert.ok(walk.some((l) => l !== [...l].reverse().join('').replace(/▀|▄|█/g, (c) => c)))
+})
+
+test('the countdown: two big amber digits, right aligned, like the light above the man', () => {
+  const d = bigDigits(20)
+  assert.equal(d.length, 3)
+  assert.ok(d.every((l) => [...l].length === 7))
+  assert.notDeepEqual(bigDigits(20), bigDigits(21))
+  assert.ok(bigDigits(7).every((l) => l.startsWith('   '))) // one digit: the tens place stays dark
+  assert.deepEqual(bigDigits(150), bigDigits(99)) // two digits at most
+  const lines = signalLines(row({ todo: { done: 1, total: 4 } }), 0, 44)
+  const digits = lines.slice(0, 3).map((l) => l.left.find((x) => /[█▀▄]/.test(x.text) && l.left.indexOf(x) > 0))
+  assert.ok(digits.every((x) => x?.tone === 'warning'))
+  // quiet: no number at all
+  assert.ok(signalLines(undefined, 0, 44).slice(0, 3).every((l) => l.left.slice(1).every((x) => !/[█▀▄]/.test(x.text))))
 })

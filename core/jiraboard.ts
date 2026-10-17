@@ -91,11 +91,11 @@ export function boardText(project: string, board: Board): string[] {
 
 export const METER_CELLS = 8
 
-// A thin meter as text (━ filled, ─ the rest); a column with any issue shows at least one filled cell.
+// A meter as plain text, status-line style (█ filled, ░ the rest); a column with any issue shows at least one filled cell.
 export function meterText(fraction: number, cells = METER_CELLS): string {
   const f = Math.max(0, Math.min(1, fraction))
   const n = f === 0 ? 0 : Math.max(1, Math.min(cells, Math.round(f * cells)))
-  return '━'.repeat(n) + '─'.repeat(cells - n)
+  return '█'.repeat(n) + '░'.repeat(cells - n)
 }
 
 // The Jira overview line for the top of a pane (htop style): one stacked meter (to do grey, in progress green,
@@ -108,7 +108,7 @@ export function boardOverview(board: Board, ageMs: number, width: number, cellCo
   const done = board.done.count
   const right: Seg[] = [{ text: ageMs < 60_000 ? 'now' : formatMinutes(ageMs), tone: 'subtle' }] // how old the read is
   const doneText = `${done}${board.done.capped ? '+' : ''}`
-  const meter = board.open === 0 ? [{ text: '─'.repeat(cellCount), tone: 'subtle' as const }] : meterSegs(doing / board.open, cellCount, 'success')
+  const meter = board.open === 0 ? meterSegs(0, cellCount, 'success') : meterSegs(doing / board.open, cellCount, 'success')
   const room = width - cells(plain0(right)) - 1
   const forms: Seg[][] = [
     [{ text: 'jira ', tone: 'subtle' }, ...meter, { text: '  ' }, { text: `${todo} todo  ${doing} doing  ${doneText} done`, tone: 'subtle' }],
