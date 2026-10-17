@@ -55,6 +55,12 @@ One pane with two views; `b` (or the button in its header) switches. `/walkman` 
 
 ```
 WALKMAN              ⚠ 1  ✕ 0  ● 1  ✓ 3  b: board ▸
+╭────────────────────────────────────────╮
+│  ██    WALK-128                        │
+│▄▀██▀▄  Panel redesign…                 │
+│▀ ██ ▀  needs you                       │
+│ █  █   7m                              │
+╰────────────────────────────────────────╯
 disk ━━──────  25%  36 GB free
 jira ━━━━────  5 todo  5 doing  98 done         2m
 ──────────────────────────────────────────
@@ -74,6 +80,7 @@ jira ━━━━────  5 todo  5 doing  98 done         2m
 ```
 
 - **Title row:** how many cards are `⚠` needs you, `✕` failed, `●` running, `✓` done (a zero is dim), and the switch to the board view.
+- **The pedestrian signal** (a Taiwan crossing light, drawn from half blocks so every terminal shows it): it stands for the most urgent card. A **green man walks** while a card runs (two steps a second; four once three quarters of its TodoWrite list are done, with `hurry`), and the number counts the steps left, or the minutes when there is no list. An **amber man stands** when a card needs you, a **red one blinks** when it failed, and a **grey one stands** when nothing is crossing. It moves only while the cards view is open; a quiet pane runs no timer.
 - **Meters (always on top), thin lines:** the disk (amber from 80% used, red from 90%) and, in a repo linked to Jira, the project's open work (in progress over all open), the counts and how long ago the board was read.
 - **Needs you** and **failed** sit under a chip on their colour (` NEEDS YOU ` amber, ` FAILED ` red), each card in a **bold box** of that colour, the longest-waiting first. The second line says why, only from what is known: the tool waiting for approval (its name only, never its input), a question Claude asked you (`AskUserQuestion`), or a symphony run in `plan_ready`.
 - **Running** cards share one **round green box**: title, the session's TodoWrite progress (`3/5`), a symphony five-step line, the minutes, and one row per subagent (at most five). Done and idle fold into one line.
@@ -271,6 +278,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | Windows branches, 0.10.2 (stubbed host only, 2026-10-16) | Tests pass: the disk from `(Get-PSDrive C).Free; .Used` (107 GB free and 429 GB used reads `100 GB free`, `80%`), live pids from `tasklist /FO CSV /NH`, `C:\…` session folders matched to `C:/…` git worktrees, `USERPROFILE` before `HOME` on Windows. **Not seen:** any of it on a Windows machine |
 | Meter pictures and overview polish, 0.10.3 (owner screenshots and a real session, 2026-10-16) | Passed: in plain Ghostty the `▤ BOARD` meter drew as a solid picture; through herdr it fell back to the dashed `▰▱` text, so herdr does not pass images. The `jira` meter, nearly all white with 32 of 33 done, now shows open work only: a real session read `jira ▕████████▏ ○ 2  ● 0  ✓ 32  now` in grey. The hint reads `KEY-n-slug` (a font joined `-<` into an arrow) |
 | UI refresh, 0.11.0 (real session, scratch card worktree on RCPM, 2026-10-17) | Passed: one pane; the cards view read `WALKMAN … b: board ▸`, `disk ━━──────  25%  35 GB free`, `jira ━━━━────  5 todo  5 doing  98 done  now`, no BOARD lane; `b` switched to the board view and back; the board view read `RCPM board · 10 open · 98 done · read now`, then `b: ◂ cards   l: ▶   columns 1–2 of 3`, with the cards as round boxes. The first try put the buttons beside the title and a 52-column pane cut the title: fixed by giving the buttons their own row. **Not seen live:** the bold amber box of a needs-you card, the round running box and the title count (`Walkman · 1`) on a real screen (Mod tests cover them) |
+| Terminal pedestrian signal, 0.12.0 (real session in Ghostty-like 130-column terminal, scratch card worktree `WALK-179-…`, 2026-10-17) | Passed: with the pane open and nothing running, a grey man stood with `quiet · nothing is crossing`; once a turn ran, the box turned green (`#4eba65`) and three screens half a second apart showed the figure alternating between `███▀` / `█ ▀▄` and `▄▀██▀▄` / `▄▀  ▀▄`, beside `WALK-179`, the title, `walking`, `<1m`. **Not seen live:** the faster pace near the end of a TodoWrite list, the amber standing man and the blinking red one (checks and Mod tests cover them), and the signal inside herdr (should show: it is plain text) |
 | A worktree the session left keeps no needs-you, 0.7.1 (2026-10-16) | Mod test only: an ask in one worktree, then a turn in another, leaves the first idle. Seen live before the fix (three worktrees red for 24 hours). **Not seen** in a real session after the fix: moving a real session between worktrees was not driven |
 | Windows | **Not run**: no Windows machine. The disk line is skipped there and paths are untested |
 
