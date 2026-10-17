@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { boardJql, boardOverview, buildBoard, boardPaneLines, boardText, meterRgba, meterText, parseIssuesJson } from '../core/jiraboard.ts'
+import { boardJql, boardOverview, buildBoard, boardText, meterText, parseIssuesJson } from '../core/jiraboard.ts'
 import type { BoardIssue } from '../core/jiraboard.ts'
 import { cells, plain, stylePane } from '../core/style.ts'
 const paneText = (lines: ReturnType<typeof stylePane>) => lines.map((l) => plain(l.left) + (l.right ? ' ' + plain(l.right) : ''))
@@ -61,53 +61,13 @@ test('an empty board says so instead of drawing nothing', () => {
   assert.match(boardText('A', buildBoard({ todo: [], inProgress: [], done: [], cap: 100 })).join('\n'), /no open Story-level issues/)
 })
 
-test('pane: a BOARD lane, one line per column with a meter and the count', () => {
-  const board = buildBoard({ todo: [issue('A-1', 'To Do'), issue('A-2', 'To Do')], inProgress: [issue('A-3', 'In Progress')], done: [issue('A-4', 'Done')], cap: 100 })
-  const lines = boardPaneLines(board, 40)
-  assert.equal(plain(lines[0]?.left ?? []), '▤ BOARD')
-  const todo = lines.find((l) => plain(l.left).includes('To Do'))
-  assert.ok(todo?.meter, 'a column line carries a meter')
-  assert.equal(todo?.meter?.fraction, 2 / 3)
-  assert.equal(todo?.meter?.category, 'To Do')
-  assert.ok(plain(todo?.right ?? []).includes('2'))
-  assert.ok(lines.some((l) => /✓ 1 done · 14d/.test(plain(l.left))))
+test('meter text: thin, filled then the rest, never wider than asked', () => {
+  assert.equal(meterText(0.5, 8), '━━━━────')
+  assert.equal(meterText(0, 4), '────')
+  assert.equal(meterText(1, 4), '━━━━')
+  assert.equal(meterText(0.01, 4), '━───') // a column with issues never looks empty
 })
 
-test('pane: no lines at all when there is no board yet', () => {
-  assert.deepEqual(boardPaneLines(undefined, 40), [])
-})
-
-test('pane: the board sits after the cards, the disk meter on top, and the board goes whole when rows run out', () => {
-  const board = boardPaneLines(buildBoard({ todo: [issue('A-1', 'To Do')], inProgress: [issue('A-2', 'In Progress')], done: [], cap: 100 }), 40)
-  const disk = { freeGb: 40, usedPct: 23 }
-  const tall = stylePane([], disk, 0, [], { rows: 30 }, board).map((l) => plain(l.left))
-  assert.ok(tall.findIndex((l) => l.includes('disk')) === 1 && tall.indexOf('▤ BOARD') > 2)
-  const short = stylePane([], disk, 0, [], { rows: 4 }, board).map((l) => plain(l.left))
-  assert.ok(!short.includes('▤ BOARD'), 'a half board was drawn')
-  assert.ok(short.some((l) => l.includes('disk')), 'the disk line must stay')
-})
-
-test('meter text: filled then empty cells, never wider than asked', () => {
-  assert.equal(meterText(0.5, 8), '▰▰▰▰▱▱▱▱')
-  assert.equal(meterText(0, 4), '▱▱▱▱')
-  assert.equal(meterText(1, 4), '▰▰▰▰')
-  assert.equal(meterText(0.01, 4), '▰▱▱▱') // a column with issues never looks empty
-})
-
-test('meter picture: RGBA pixels, colored part in proportion, the rest dim', () => {
-  const { rgba, width, height } = meterRgba(0.5, 'In Progress', 20, 4)
-  assert.equal(width, 20)
-  assert.equal(height, 4)
-  const bytes = Uint8Array.from(atob(rgba), (c) => c.charCodeAt(0))
-  assert.equal(bytes.length, 20 * 4 * 4)
-  const px = (x: number) => [...bytes.slice(x * 4, x * 4 + 4)]
-  assert.notDeepEqual(px(0), px(19), 'the filled part and the rest differ')
-  assert.deepEqual(px(0), px(9))
-  assert.deepEqual(px(10), px(19))
-  assert.equal(px(0)[3], 255)
-})
-
-// ---------- WALK-156: Epic, subtasks, overview ----------
 test('parseIssuesJson keeps the Epic and the subtask counts symphony-workflow 0.12 returns', () => {
   const out = JSON.stringify({ issues: [{ key: 'WALK-20', status: 'Backlog', summary: 's', assignee: null, issue_type: 'Story', parent: 'WALK-1', parent_summary: 'WALK-E1: Pedestrian board', status_category: 'new', subtasks_done: 5, subtasks_total: 6 }] })
   const [i] = parseIssuesJson(out)
@@ -126,20 +86,18 @@ test('the printed board names the Epic and the subtask progress when known', () 
   assert.match(text, /◆ Pedestrian board/)
 })
 
-test('overview line: a meter of the open work (to do, in progress), the counts and the read age', () => {
+test('overview line: a thin meter of the open work, the counts in words and the read age', () => {
   const b = buildBoard({ todo: [issue('A-1', 'To Do'), issue('A-2', 'To Do')], inProgress: [issue('A-3', 'In Progress')], done: [issue('A-4', 'Done')], cap: 100 })
-  const line = boardOverview(b, 120_000, 40)
+  const line = boardOverview(b, 120_000, 44)
   const text = plain(line.left)
-  assert.match(text, /^jira /)
-  assert.match(text, /○ 2 {2}● 1 {2}✓ 1/)
-  assert.match(plain(line.right ?? []), /2m ago/)
-  const tones = line.left.filter((s) => /[█]/.test(s.text)).map((s) => s.tone)
-  assert.deepEqual(tones, ['subtle', 'success'], 'done is a count, not part of the meter')
+  assert.match(text, /^jira ━━━─────  2 todo  1 doing  1 done$/)
+  assert.equal(plain(line.right ?? []), '2m')
+  assert.ok(!/[█░▰▱]/.test(text), 'no block glyphs')
+  assert.ok(cells(text) + cells(plain(line.right ?? [])) <= 44)
   // owner screenshot 2026-10-16: 32 of 33 done drew an almost white bar; done must not fill the meter
   const mostlyDone = buildBoard({ todo: [issue('A-1', 'To Do')], inProgress: [], done: Array.from({ length: 32 }, (_, i) => issue(`D-${i}`, 'Done')), cap: 100 })
-  const meter = boardOverview(mostlyDone, 0, 60).left.filter((x) => /[█░]/.test(x.text))
-  assert.deepEqual(meter.map((x) => [x.text.length, x.tone]), [[8, 'subtle']], 'the one open Story fills the meter, in grey')
-  assert.ok(cells(text) + cells(plain(line.right ?? [])) <= 40)
+  assert.match(plain(boardOverview(mostlyDone, 0, 44).left), /^jira ────────  1 todo  0 doing  32 done$/)
+  assert.match(plain(boardOverview(mostlyDone, 0, 26).left), /○1 ●0 ✓32/, 'a narrow pane gets the short form')
 })
 
 test('the hint for a card branch has no "-<" a font could join into an arrow', () => {

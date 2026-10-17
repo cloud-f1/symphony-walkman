@@ -7,23 +7,26 @@ import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf, parsePsDrive } from '../core/disk.ts'
 import { renderBoard } from '../core/board.ts'
 import { buildJql, isProject, mergeJira, parseSearch } from '../core/jira.ts'
-import { BOARD_CAP, boardJql, boardOverview, boardPaneLines, boardText, buildBoard, meterRgba, meterText, parseIssuesJson } from '../core/jiraboard.ts'
+import { BOARD_CAP, boardJql, boardOverview, boardText, buildBoard, parseIssuesJson } from '../core/jiraboard.ts'
 import type { Board, BoardIssue } from '../core/jiraboard.ts'
 import { doctorLines, envNames, hasAnsi } from '../core/doctor.ts'
 import { SW_GIT, SW_REF, VERSION } from '../core/version.ts'
 import type { JiraIssue } from '../core/jira.ts'
 import { HELP, LEGEND, plain, stylePane, styleBand } from '../core/style.ts'
-import type { Line, PaneLine, Tone } from '../core/style.ts'
+import type { Line, PaneLine, Seg, Tone } from '../core/style.ts'
 import { signalSvg } from '../core/svg.ts'
 import { isRecordName, otherSessionLights, parsePs, parseRecord, parseTasklist } from '../core/sessions.ts'
 import type { SessionRecord } from '../core/sessions.ts'
-import { boardGrid } from '../core/boardgrid.ts'
-import type { CardLight } from '../core/boardgrid.ts'
+import { CARD_CELLS, boardGrid } from '../core/boardgrid.ts'
+import type { CardLight, GridCard } from '../core/boardgrid.ts'
 import type { AgentRow, CardRow, Disk, Light, RunState } from '../core/contracts.ts'
 
 const PANE_ID = 'walkman-pane'
-const BOARD_PANE_ID = 'walkman-board'
-let boardOffset = 0 // the first board column the board pane shows; h and l move it
+// One pane, two views (WALK-174): `cards` (the side view) and `board` (the Jira columns). b switches.
+let paneView: 'cards' | 'board' = 'cards'
+let paneOpen = false // opened by /walkman and not closed since: only then is the title kept current
+let paneTitle = 'Walkman'
+let boardOffset = 0 // the first board column the board view shows; h and l move it
 const SETUP_COMMAND = 'npx --yes github:cloud-f1/symphony-walkman setup'
 const DEFAULT_ENV_FILE = '~/.config/symphony-workflow/.env'
 const REFRESH_MS = 3000 // draws can repeat often; reread git / files at most this often
@@ -49,29 +52,49 @@ async function expandHome($: Engine, p: string): Promise<string> {
 
 
 // Tones follow the person's theme (the same keys the status line colors map to).
-const THEME: Record<Tone, string> = { success: 'success', error: 'error', warning: 'warning', subtle: 'inactive', text: 'text' }
+const THEME: Record<Tone, string> = { success: 'success', error: 'error', warning: 'warning', subtle: 'inactive', text: 'text', inverse: 'inverseText' }
+
+// Secondary text (`subtle`) is drawn dim in the theme's own text colour; a `bg` makes a chip.
+const textProps = (seg: Seg): Record<string, unknown> => ({
+  ...(seg.tone === 'subtle' ? { dimColor: true } : { color: THEME[seg.tone ?? 'text'] }),
+  ...(seg.bg ? { backgroundColor: THEME[seg.bg] } : {}),
+  bold: seg.bold === true,
+  wrap: 'truncate-end',
+})
 
 // One styled line as a row of Text pieces. Wrapping is off so a narrow pane never splits a card.
 function styled(Box: never, Text: never, line: Line): unknown {
   if (line.length === 0) return h(Text, null, ' ')
-  return h(Box, { flexDirection: 'row' }, ...line.map((seg) => h(Text, { color: THEME[seg.tone ?? 'text'], bold: seg.bold === true, wrap: 'truncate-end' }, seg.text)))
+  return h(Box, { flexDirection: 'row' }, ...line.map((seg) => h(Text, textProps(seg), seg.text)))
 }
 
 // One pane line: `left` as styled Texts; with `right` (a time), the two sit at opposite edges of the row.
-// A board column's meter: a picture where the surface has Image (it draws pixels on kitty and Ghostty, and its alt
-// text dim anywhere else), the same meter as text where it has none (Claude Desktop).
-const METER_TONE: Record<string, Tone> = { 'To Do': 'subtle', 'In Progress': 'success', Done: 'success' }
-function meter(Text: never, Image: unknown, m: NonNullable<PaneLine['meter']>): unknown {
-  const text = meterText(m.fraction, m.cells)
-  if (typeof Image !== 'function') return h(Text, { color: THEME[METER_TONE[m.category] ?? 'subtle'] }, text)
-  // Image is a leaf: call the constructor directly, since h() would hand it an empty `children`.
-  return (Image as (props: object) => unknown)({ source: meterRgba(m.fraction, m.category), columns: m.cells, rows: 1, alt: text })
+function paneRow(Box: never, Text: never, line: PaneLine): unknown {
+  if (!line.right) return styled(Box, Text, line.left)
+  return h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, styled(Box, Text, line.left), styled(Box, Text, line.right))
 }
 
-function paneRow(Box: never, Text: never, line: PaneLine, Image?: unknown): unknown {
-  if (!line.right && !line.meter) return styled(Box, Text, line.left)
-  const right = h(Box, { flexDirection: 'row' }, ...(line.meter ? [meter(Text, Image, line.meter)] : []), ...(line.right ? [styled(Box, Text, line.right)] : []))
-  return h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, styled(Box, Text, line.left), right)
+// Pane lines, the ones that share a box id drawn inside one bordered Box (bold for a card that needs you or failed,
+// round for the running cards), in the box's colour.
+function paneBody(Box: never, Text: never, lines: readonly PaneLine[]): unknown[] {
+  const out: unknown[] = []
+  for (let i = 0; i < lines.length; ) {
+    const box = (lines[i] as PaneLine).box
+    if (!box) {
+      out.push(paneRow(Box, Text, lines[i] as PaneLine))
+      i++
+      continue
+    }
+    const group: unknown[] = []
+    while (i < lines.length && (lines[i] as PaneLine).box?.id === box.id) group.push(paneRow(Box, Text, lines[i++] as PaneLine))
+    out.push(h(Box, { flexDirection: 'column', borderStyle: box.style, borderColor: THEME[box.tone] }, ...group))
+  }
+  return out
+}
+
+// A board card as a real Box: round border, in its tone when lit (running, needs you, failed), dim otherwise.
+function cardBox(Box: never, Text: never, c: GridCard): unknown {
+  return h(Box, { flexDirection: 'column', borderStyle: 'round', width: CARD_CELLS, paddingX: 1, ...(c.lit ? { borderColor: THEME[c.tone] } : { borderDimColor: true }) }, ...c.body.map((l) => styled(Box, Text, l)))
 }
 
 async function readRunState($: Engine, key: string): Promise<RunState | undefined> {
@@ -440,6 +463,7 @@ async function load($: Engine, now: number): Promise<void> {
   for (const k of [...seen.keys()]) if (!rows.some((r) => k === `${r.worktree}|${r.light}`)) seen.delete(k)
   cache.rows = rows
   notifyNeedsYou($, rows)
+  void keepTitle($, rows)
   syncTicker($, rows)
   if (now - cache.diskAt >= DISK_MS || now < cache.diskAt) {
     cache.disk = await readDisk($)
@@ -507,6 +531,25 @@ async function doctorText($: Engine): Promise<string> {
   return ['Walkman doctor', ...doctorLines({ project, cloneDir: dir, envFile, envNames: names, envHasAnsi: ansi, uvx, settingsCreds: creds ? 'complete' : set.length > 0 ? 'partial:' + set.join('+') : 'none', cardCount: cache.rows.length, jiraError: jira.error, jiraCount: jira.at === -Infinity ? undefined : jira.issues.length, setupCommand: SETUP_COMMAND })].join('\n')
 }
 
+// The open arguments of the one pane; its title says how many cards need you ("Walkman · 2"), as a tab shows it.
+function titleFor(rows: readonly CardRow[]): string {
+  const n = rows.filter((r) => r.light === 'waiting' || r.light === 'failed').length
+  return n > 0 ? `Walkman · ${n}` : 'Walkman'
+}
+function paneArgs(focus: boolean): { id: string; title: string; closeOnEscape: true; focus?: true; columns?: number; rows?: number } {
+  paneTitle = titleFor(cache.rows)
+  return { id: PANE_ID, title: paneTitle, closeOnEscape: true, ...(focus ? { focus: true as const } : {}), ...(paneView === 'board' ? { columns: 120, rows: 30 } : {}) }
+}
+// Opening an open id only delivers its new title (never a second pane); done only while the person keeps it open.
+async function keepTitle($: Engine, rows: readonly CardRow[]): Promise<void> {
+  if (!paneOpen || titleFor(rows) === paneTitle) return
+  try {
+    await $.ui.open(paneArgs(false))
+  } catch {
+    // a title is a courtesy
+  }
+}
+
 export function register(on: On, options?: PluginOptions) {
   pluginOptions = (options ?? {}) as Record<string, unknown>
 
@@ -563,9 +606,11 @@ export function register(on: On, options?: PluginOptions) {
 
   on('command.run', { command: 'walkman' }, async ($, e) => {
     const [sub, arg] = String(e.args ?? '').trim().split(/\s+/)
-    const openPane = async () => {
+    const openPane = async (v: 'cards' | 'board') => {
+      paneView = v
       try {
-        const opened = await $.ui.open({ id: PANE_ID, title: 'Walkman', closeOnEscape: true })
+        const opened = await $.ui.open(paneArgs(true))
+        paneOpen = true
         return opened.isPlaced
       } catch {
         return false
@@ -582,12 +627,8 @@ export function register(on: On, options?: PluginOptions) {
       const linked = (await jiraSettings($).catch(() => ({ project: '' }))).project !== ''
       if (linked) {
         void ensureBoard($, await $.clock.now())
-        try {
-          const opened = await $.ui.open({ id: BOARD_PANE_ID, title: 'Jira board', focus: true, closeOnEscape: true, columns: 120, rows: 30 })
-          if (opened.isPlaced) return { text: 'Jira board opened. h / l move the columns, arrows scroll, Esc closes. /walkman board print prints it instead.' }
-        } catch {
-          // no pane here: print the board below
-        }
+        if (await openPane('board')) return { text: 'Jira board opened. b switches to the cards, h / l move the columns, arrows scroll, Esc closes. /walkman board print prints it instead.' }
+        // no pane here: print the board below
       }
     }
     if (sub && sub !== 'board' && sub !== 'pane') return { text: ['Walkman: unknown option "' + sub + '"', HELP].join('\n') }
@@ -600,7 +641,7 @@ export function register(on: On, options?: PluginOptions) {
       }
     }
     if (sub === 'pane' || sub === undefined || sub === '') {
-      if (await openPane()) return { text: 'Walkman pane opened. /walkman pane close (or Esc) closes it.' }
+      if (await openPane('cards')) return { text: 'Walkman pane opened. b switches to the Jira board, /walkman pane close (or Esc) closes it.' }
       if (sub === 'pane') return { text: 'Walkman pane is waiting: widen the terminal to see it.' }
       // /walkman with no room for a pane: fall through to the printed board.
     }
@@ -623,51 +664,57 @@ export function register(on: On, options?: PluginOptions) {
     return { text: ['Walkman board', ...lines, ...(cache.rows.length === 0 && cache.why && !/ git=0\b/.test(cache.why) ? ['(could not read git: ' + cache.why + ')'] : []), ...(jira.error ? ['(jira lookup: ' + jira.error + ')'] : jira.inflight ? ['(jira lookup still running; run /walkman again in a moment)'] : []), ...boardLines, ...(linked ? [] : ['', 'Not linked to Jira. Set WALKMAN_JIRA_PROJECT, or run: ' + SETUP_COMMAND]), '', plain(LEGEND)].join('\n') }
   })
 
+  // The pane: the cards view (htop style: meters on top, then what needs you) or the board view (the Jira columns side
+  // by side, the card Claude works on lit). b, or the button in the header, switches; h / l move the board's columns.
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
-    const elements = $.ui.resolve(e) as Record<string, unknown>
-    const { Box, Text } = elements as never as { Box: never; Text: never }
-    await refresh($)
-    const v = view()
-    // viewport.columns is the whole terminal, not this pane, so only the height is used; a title the pane cannot hold is cut by Text itself
-    const now = await $.clock.now()
-    const top = boardState.board ? [boardOverview(boardState.board, now - boardState.at, 42)] : []
-    const lines = stylePane(v.rows, cache.disk, now, v.others, { rows: e.viewport?.rows }, boardPaneLines(boardState.board, 42), top)
-    // Image is a terminal-surface element (the table may carry it elsewhere, where it draws nothing)
-    const image = e.surface === 'terminal' ? elements['Image'] : undefined
-    return h(Box, { flexDirection: 'column', paddingX: 1 }, ...lines.map((line) => paneRow(Box, Text, line, image))) as RenderElement
-  })
-
-  // The board pane: the project's columns side by side, the card Claude works on lit, h / l move the columns.
-  on('ui.render', { component: 'Pane', requestId: BOARD_PANE_ID }, async ($, e) => {
     const elements = $.ui.resolve(e) as Record<string, unknown>
     const { Box, Text, Button } = elements as never as { Box: never; Text: never; Button: never }
     await refresh($)
     const now = await $.clock.now()
     void ensureBoard($, now)
-    const column = (lines: Line[]) => h(Box, { flexDirection: 'column', paddingX: 1 }, ...lines.map((line) => styled(Box, Text, line))) as RenderElement
     const linked = isProject((await jiraSettings($).catch(() => ({ project: '' }))).project)
-    if (!boardState.board || !linked) {
-      const why = !linked ? 'Not linked to Jira. Set WALKMAN_JIRA_PROJECT, or run: ' + SETUP_COMMAND : boardState.error ? 'jira board: ' + boardState.error : boardState.inflight ? 'reading the Jira board…' : 'Not linked to Jira. Set WALKMAN_JIRA_PROJECT, or run: ' + SETUP_COMMAND
-      return column([[{ text: why, tone: boardState.error ? 'error' : 'subtle' }]])
-    }
-    const lights = new Map<string, CardLight>(cache.rows.map((r) => [r.key, { light: r.light, sinceMs: r.sinceMs }]))
-    const width = (e.props as { bodyColumns?: number }).bodyColumns ?? e.viewport?.columns ?? 120
-    const grid = boardGrid(boardState.board, lights, { width: width - 2, offset: boardOffset, now, project: boardState.project, ageMs: now - boardState.at })
-    boardOffset = grid.from // an offset past the end, after the board shrank, snaps back
-    const move = (to: number) => () => {
-      boardOffset = Math.max(0, to)
+    const width = (e.props as { bodyColumns?: number }).bodyColumns ?? 44 // the pane's own width (viewport is the terminal's)
+    const redraw = (change: () => void) => () => {
+      change()
       try {
         $.ui.invalidate('ui.render')
       } catch {
         // a redraw is a courtesy
       }
     }
-    const buttons: unknown[] = []
-    if (grid.from > 0) buttons.push(h(Button, { key: 'left', label: '◀', hotkey: 'h', plain: true, onPress: move(grid.from - 1) }))
-    if (grid.to < grid.total) buttons.push(h(Button, { key: 'right', label: '▶', hotkey: 'l', plain: true, onPress: move(grid.from + 1) }))
-    const [title, ...rest] = grid.lines
-    const head = h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, styled(Box, Text, title ?? []), h(Box, { flexDirection: 'row' }, ...buttons.flatMap((b, i) => (i === 0 ? [b] : [h(Text, null, '  '), b]))))
-    return h(Box, { flexDirection: 'column', paddingX: 1 }, head, ...rest.map((line) => styled(Box, Text, line))) as RenderElement
+    const toggle = linked && Button ? h(Button, { key: 'view', label: paneView === 'board' ? '◂ cards' : 'board ▸', hotkey: 'b', plain: true, dimColor: true, onPress: redraw(() => (paneView = paneView === 'board' ? 'cards' : 'board')) }) : undefined
+
+    if (paneView === 'board' && linked) {
+      if (!boardState.board) {
+        const why = boardState.error ? 'jira board: ' + boardState.error : 'reading the Jira board…'
+        return h(Box, { flexDirection: 'column', paddingX: 1 }, styled(Box, Text, [{ text: why, tone: boardState.error ? 'error' : 'subtle' }]), ...(toggle ? [toggle] : [])) as RenderElement
+      }
+      const lights = new Map<string, CardLight>(cache.rows.map((r) => [r.key, { light: r.light, sinceMs: r.sinceMs }]))
+      const grid = boardGrid(boardState.board, lights, { width: width - 2, offset: boardOffset, now, project: boardState.project, ageMs: now - boardState.at })
+      boardOffset = grid.from // an offset past the end, after the board shrank, snaps back
+      const buttons: unknown[] = [...(toggle ? [toggle] : [])]
+      if (grid.from > 0) buttons.push(h(Button, { key: 'left', label: '◀', hotkey: 'h', plain: true, onPress: redraw(() => (boardOffset = Math.max(0, grid.from - 1))) }))
+      if (grid.to < grid.total) buttons.push(h(Button, { key: 'right', label: '▶', hotkey: 'l', plain: true, onPress: redraw(() => (boardOffset = grid.from + 1)) }))
+      // the title has the whole row; the buttons sit on their own row under it (a narrow pane cut the title and wrapped ▶)
+      const head = h(Box, { flexDirection: 'column' }, styled(Box, Text, grid.title), h(Box, { flexDirection: 'row' }, ...buttons.flatMap((b, i) => (i === 0 ? [b] : [h(Text, null, '   '), b])), ...(grid.position ? [h(Text, null, '   '), styled(Box, Text, grid.position)] : [])))
+      const columns = grid.columns.map((c, i) =>
+        h(Box, { flexDirection: 'column', width: CARD_CELLS, ...(i < grid.columns.length - 1 ? { marginRight: 2 } : {}) }, styled(Box, Text, c.header), styled(Box, Text, [{ text: '─'.repeat(CARD_CELLS), tone: 'subtle' }]), ...c.cards.map((card) => cardBox(Box, Text, card)), ...c.body.map((l) => styled(Box, Text, l))),
+      )
+      return h(Box, { flexDirection: 'column', paddingX: 1, gap: 1 }, head, ...(grid.empty ? [styled(Box, Text, grid.empty)] : []), h(Box, { flexDirection: 'row' }, ...columns), styled(Box, Text, grid.keys)) as RenderElement
+    }
+
+    const v = view()
+    const top = boardState.board ? [boardOverview(boardState.board, now - boardState.at, width - 2)] : []
+    const [header, ...rest] = stylePane(v.rows, cache.disk, now, v.others, { rows: e.viewport?.rows, columns: width }, top)
+    // the header row: title and counts, then the view switch
+    const headRow = h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, styled(Box, Text, (header as PaneLine).left), h(Box, { flexDirection: 'row' }, styled(Box, Text, (header as PaneLine).right ?? []), ...(toggle ? [h(Text, null, '  '), toggle] : [])))
+    return h(Box, { flexDirection: 'column', paddingX: 1 }, headRow, ...paneBody(Box, Text, rest)) as RenderElement
+  })
+
+  // The person closed the pane (its x, Esc, /walkman pane close): stop keeping its title current.
+  on('ui.close', async ($, e, next) => {
+    if ((e as { id?: unknown }).id === PANE_ID) paneOpen = false
+    return next(e)
   })
 
   // The always-on strip above the prompt: one text line on the terminal, the signal drawing on Desktop.

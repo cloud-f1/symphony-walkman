@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { COLUMN_CELLS, boardGrid, wrapCells } from '../core/boardgrid.ts'
+import { CARD_INNER, COLUMN_CELLS, boardGrid, wrapCells } from '../core/boardgrid.ts'
 import { buildBoard } from '../core/jiraboard.ts'
 import type { BoardIssue } from '../core/jiraboard.ts'
 import { cells, plain } from '../core/style.ts'
@@ -34,14 +34,14 @@ test('columns sit side by side: every status a column, Done last as a count', ()
 test('a card is a box: key, two title lines, assignee; every line of the grid is the same width', () => {
   const g = boardGrid(board, new Map(), { width: 200, offset: 0, now: 0 })
   const all = text(g.lines)
-  assert.ok(all.some((l) => l.includes('┌')) && all.some((l) => l.includes('└')))
+  assert.ok(all.some((l) => l.includes('╭')) && all.some((l) => l.includes('╰')))
   assert.ok(all.some((l) => l.includes('WALK-20')))
   assert.ok(all.some((l) => l.includes('Real-session')))
   assert.ok(all.some((l) => l.includes('unassigned')))
   const body = all.slice(1) // the title line has its own width
   const widths = new Set(body.map((l) => cells(l.trimEnd())).filter((w) => w > 0))
   for (const w of widths) assert.ok(w <= 4 * COLUMN_CELLS, `a line is ${w} cells wide`)
-  const first = all.findIndex((l) => l.includes('┌'))
+  const first = all.findIndex((l) => l.includes('╭'))
   assert.equal(cells(all[first] ?? ''), cells(all[first + 1] ?? ''), 'box lines of one row differ in width')
 })
 
@@ -51,7 +51,7 @@ test('the card Claude works on is lit: symbol, minutes and a colored border', ()
   const all = text(g.lines)
   assert.ok(all.some((l) => /● WALK-151 +3m/.test(l)), 'running card without its light')
   assert.ok(all.some((l) => /⚠ WALK-148 +3m/.test(l)), 'needs-you card without its light')
-  const tones = g.lines.flat().filter((s) => s.text.includes('┌')).map((s) => s.tone)
+  const tones = g.lines.flat().filter((s) => s.text.includes('╭')).map((s) => s.tone)
   assert.ok(tones.includes('success') && tones.includes('warning'), 'borders do not follow the lights')
   assert.ok(tones.includes('subtle'), 'an unlit card should have a quiet border')
 })
@@ -85,7 +85,7 @@ test('a card shows its Epic and its subtask progress when known (WALK-156)', () 
   const b = buildBoard({ todo: [{ ...issue('WALK-20', 'Backlog', 'Real-session check'), epic: 'WALK-1', epicName: 'WALK-E1: Pedestrian board', subDone: 5, subTotal: 6 }], inProgress: [], done: [], cap: 100 })
   const all = text(boardGrid(b, new Map(), { width: 120, offset: 0, now: 0 }).lines)
   assert.ok(all.some((l) => l.includes('◆ WALK-E1: Pedestri')), 'no Epic line')
-  assert.ok(all.some((l) => /▰+▱* 5\/6/.test(l)), 'no subtask meter')
+  assert.ok(all.some((l) => /━+─* 5\/6/.test(l)), 'no subtask meter')
   const box = all.filter((l) => l.includes('│'))
   assert.equal(new Set(box.map((l) => cells(l.slice(0, l.lastIndexOf('│') + 1)))).size, 1, 'card lines differ in width')
 })
@@ -98,4 +98,15 @@ test('the board pane ends with a key bar, and says how old the read is', () => {
   const wide = text(boardGrid(board, new Map(), { width: 200, offset: 0, now: 0 }).lines)
   assert.match(wide.at(-1) ?? '', /↑↓ scroll {2}Esc close/)
   assert.doesNotMatch(wide.at(-1) ?? '', /h ◀/)
+})
+
+test('the grid is also a model for real Boxes: shown columns, cards with their tone, the Done body (WALK-174)', () => {
+  const lights = new Map([['WALK-151', { light: 'walking' as const, sinceMs: 0 }]])
+  const g = boardGrid(board, lights, { width: 2 * COLUMN_CELLS + 3, offset: 1, now: 0 })
+  assert.equal(g.columns.length, 2)
+  assert.equal(plain(g.columns[0]?.header ?? []), 'IN PROGRESS 1')
+  const lit = g.columns[0]?.cards[0]
+  assert.deepEqual([lit?.tone, lit?.lit], ['success', true])
+  assert.ok(lit?.body.every((l) => cells(plain(l)) === CARD_INNER), 'card lines are not INNER wide')
+  assert.match(plain(g.keys), /^b cards {2}h ◀/)
 })

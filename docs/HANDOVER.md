@@ -1,4 +1,4 @@
-# Handover (state at v0.10.2, refreshed 2026-10-16)
+# Handover (state at v0.11.0, refreshed 2026-10-17)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.10.2` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.11.0` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -136,3 +136,4 @@ Docker was removed so nothing remains there.
 - v0.10.0 (WALK-162, WALK-28): other sessions light cards from `~/.claude/sessions/<pid>.json` (only `^\d+\.json$`, never the `.key` files; `ps -o pid= -p …` for liveness; `busy` running, `waiting` needs you; this session's own record is skipped by `$.session.id()`; its own signals win). Sessions started by `tools/real-session/drive.py` write **no** record (also with `CLAUDE_CODE_CHILD_SESSION` and the other session variables removed), so a real two-window check needs two normally started sessions. `/walkman debug` prints `other sessions: N records, M alive (statuses), K lit`. Subagent rows come from `$.agent.list()` (no start time in it: first-seen time is kept).
 - Release gate (v0.10.1, WALK-167): `npm run release:check` / `npm run release` (`scripts/release.mjs`, audit functions in `scripts/audit.mjs`, tested by `checks/audit.check.ts`). The owner asked for it on 2026-10-16: a check and an audit before any version ships. Its first dry run found a type error the tests did not (`core/jiraboard.ts`). It needs `npm ci` and the Mod API types (written when Claude Code loads the repo interactively); missing either fails the gate. The audit test builds its fake tokens at run time so the secrets scan does not flag the repo itself.
 - Windows (v0.10.2, WALK-30): disk through PowerShell `Get-PSDrive` on the system drive, liveness through `tasklist /FO CSV /NH`, paths compared after `normalizePath` (slashes, lower-case drive letter), `USERPROFILE` before `HOME` on Windows. Written on macOS and tested on the stubbed host only: needs a run on a Windows machine before the README can say it works.
+- UI refresh (v0.11.0, WALK-174, owner chose all nine items on 2026-10-17 after a research of the Mod styling API and other mods): thin meters (`meterSegs`, ━ in tone, ─ dim) because █ fills the whole cell; the BOARD lane and the Image meter are gone (duplicate of the jira line; herdr never showed the picture); one pane `walkman-pane` with `paneView` cards/board switched by a `b` Button, so no tab row; needs-you and failed cards in bold boxes of their tone, running cards in one round box (`PaneLine.box`, grouped by `paneBody`); chips via `Seg.bg` + `inverse`; `subtle` is drawn with `dimColor`; the side view uses `bodyColumns`; board cards are real round Boxes from the `boardGrid` model (its `lines` stay as text for the checks); the title counts needs-you (`keepTitle` re-opens the open id; `ui.close` stops it). A narrow pane cuts each Text in a row separately, so long rows (title plus buttons) must be split, not just clipped.
