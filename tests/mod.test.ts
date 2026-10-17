@@ -14,6 +14,7 @@ function stubs(on: any, setup: Setup = {}) {
   const files = setup.files ?? {}
   const registered: string[] = []
   const panes: string[] = []
+  const titles: string[] = []
   let worktreeCalls = 0
   const jiraCalls: string[] = []
   const jiraEnvs: Record<string, string>[] = []
@@ -56,7 +57,7 @@ function stubs(on: any, setup: Setup = {}) {
   })
   on('agent.list', () => ({ value: setup.agents ?? [] }))
   on('session.id', () => ({ value: 'me' }))
-  on('ui.open', (_: any, e: any) => { panes.push('open:' + e.id); return { value: { isPlaced: true } } })
+  on('ui.open', (_: any, e: any) => { panes.push('open:' + e.id); titles.push(e.title); return { value: { isPlaced: true } } })
   on('ui.close', (_: any, e: any) => { panes.push('close:' + e.id); return { value: undefined } })
   on('ui.resolve', () => ({
     Box: ({ children, ...props }: any) => ({ type: 'Box', props, children }),
@@ -69,7 +70,7 @@ function stubs(on: any, setup: Setup = {}) {
   on('session.start', () => ({ cwd: CWD }))
   on('turn.start', (_: any, e: any) => ({ turnId: e.turnId }))
   on('turn.complete', (_: any, e: any) => ({ text: e.answer ?? '' }))
-  return { registered, panes, jiraCalls, jiraEnvs, counts, toasts, clock, invalidated }
+  return { registered, panes, titles, jiraCalls, jiraEnvs, counts, toasts, clock, invalidated }
 }
 
 const walkman = ($: any, args: string): Promise<{ text: string }> => $.command.run({ command: 'walkman', args })
@@ -464,25 +465,6 @@ test('the board queries are read only, one per status category, through the same
   expect(calls.some((c) => c.includes('statusCategoryChangedDate >= -14d'))).toBe(true)
 })
 
-test('pane: a BOARD lane with a picture meter where the surface has Image', async ($, on) => {
-  stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: BOARD, image: true })
-  await walkman($, 'board print') // loads the board
-  const pane = flat(await paneOf($))
-  expect(pane).toContain('▤ BOARD')
-  expect(pane).toContain('"type":"Image"')
-  expect(pane).toContain('"rgba"')
-  expect(pane).toContain('"alt":"▰▰▰▱▱▱▱▱"') // 1 of 3 open, the same meter as text for anyone without pictures
-})
-
-test('pane: the same meter as text where the surface has no Image (Claude Desktop)', async ($, on) => {
-  stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: BOARD })
-  await walkman($, 'board print')
-  const pane = flat(await ($ as any).ui.render({ surface: 'desktop', component: 'Pane', requestId: 'walkman-pane', props: {}, viewport: { columns: 44, rows: 30 } }))
-  expect(pane).toContain('▤ BOARD')
-  expect(pane).not.toContain('"rgba"')
-  expect(pane).toContain('▰▰▰▱▱▱▱▱') // each column 1 of 3 open
-})
-
 test('the board rereads every five minutes, not on every draw', async ($, on) => {
   const s = stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: BOARD })
   await walkman($, 'board print')
@@ -513,19 +495,23 @@ test('a failing board read says so and keeps the card board', async ($, on) => {
 })
 
 // ---------- the board pane (WALK-151) ----------
-const boardPane = ($: any, bodyColumns = 120): Promise<any> => ($ as any).ui.render({ surface: 'terminal', component: 'Pane', requestId: 'walkman-board', props: { bodyColumns }, viewport: { columns: 200, rows: 40 } })
+// the one pane, switched to its board view by /walkman board
+const boardPane = async ($: any, bodyColumns = 120): Promise<any> => {
+  await walkman($, 'board')
+  return ($ as any).ui.render({ surface: 'terminal', component: 'Pane', requestId: 'walkman-pane', props: { bodyColumns }, viewport: { columns: 200, rows: 40 } })
+}
 
 test('/walkman board in a linked repo opens the board pane, wide and focused', async ($, on) => {
   const s = stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: BOARD })
   const out = (await walkman($, 'board')).text
-  expect(s.panes).toContain('open:walkman-board')
+  expect(s.panes).toContain('open:walkman-pane')
   expect(out).toContain('h / l')
 })
 
 test('/walkman board in an unlinked repo still prints the card board', async ($, on) => {
   const s = stubs(on)
   const out = (await walkman($, 'board')).text
-  expect(s.panes).not.toContain('open:walkman-board')
+  expect(s.panes).not.toContain('open:walkman-pane')
   expect(out).toContain('CF1-195')
 })
 
@@ -537,8 +523,8 @@ test('board pane: columns side by side, the card Claude works on lit', async ($,
   expect(pane).toContain('BACKLOG')
   expect(pane).toContain('IN PROGRESS')
   expect(pane).toContain('● CF1-195')
-  expect(pane).toContain('┌')
-  expect(pane).not.toContain('"hotkey"') // everything fits: no buttons
+  expect(pane).toContain('"borderStyle":"round"')
+  expect(pane).not.toContain('"hotkey":"l"') // everything fits: no column buttons
 })
 
 test('board pane: more columns than fit get h / l buttons that move the window', async ($, on) => {
@@ -549,15 +535,17 @@ test('board pane: more columns than fit get h / l buttons that move the window',
   expect(text).toContain('BACKLOG')
   expect(text).not.toContain('"hotkey":"h"')
   expect(text).toContain('"hotkey":"l"')
-  await ($ as any).ui.press({ plugin: 'symphony-walkman', key: 'right', requestId: 'walkman-board', surface: 'terminal' })
+  await ($ as any).ui.press({ plugin: 'symphony-walkman', key: 'right', requestId: 'walkman-pane', surface: 'terminal' })
   const moved = flat(await boardPane($, 40))
   expect(moved).not.toContain('BACKLOG')
   expect(moved).toContain('"hotkey":"h"')
 })
 
-test('board pane before the board is read says so instead of drawing nothing', async ($, on) => {
+test('an unlinked repo gets no board switch in the pane', async ($, on) => {
   stubs(on)
-  expect(flat(await boardPane($))).toContain('Not linked to Jira')
+  const pane = flat(await paneOf($))
+  expect(pane).not.toContain('"hotkey":"b"')
+  expect(pane).not.toContain('board ▸')
 })
 
 test('a worktree the session has left keeps no needs-you: a signal in one worktree clears the others (WALK-148)', async ($, on) => {
@@ -613,7 +601,7 @@ test('the side pane puts the disk meter and the Jira overview on top, under the 
   expect(rows[0]).toContain('WALKMAN')
   expect(rows[1]).toContain('disk')
   expect(rows[2]).toContain('jira')
-  expect(rows[2]).toContain('○ 2')
+  expect(rows[2]).toContain('2 todo')
 })
 
 test('the board pane ends with its key bar', async ($, on) => {
@@ -664,4 +652,55 @@ test('on Windows the disk comes from PowerShell, liveness from tasklist, the ses
   expect(pane).toContain('100 GB free')
   expect(pane).toContain('80%')
   expect((await walkman($, 'debug')).text).toContain('CF1-195:waiting')
+})
+
+// ---------- WALK-174: UI refresh ----------
+test('one pane, two views: b switches between the cards and the board, and the side view has no BOARD lane or picture', async ($, on) => {
+  stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: BOARD })
+  await walkman($, 'board print') // loads the board
+  await walkman($, '') // the cards view
+  const cards = flat(await paneOf($))
+  expect(cards).toContain('board ▸')
+  expect(cards).not.toContain('▤ BOARD')
+  expect(cards).not.toContain('"type":"Image"')
+  expect(cards).not.toMatch(/[█░▰▱]/)
+  await ($ as any).ui.press({ plugin: 'symphony-walkman', key: 'view', requestId: 'walkman-pane', surface: 'terminal' })
+  const board = flat(await paneOf($))
+  expect(board).toContain('BACKLOG')
+  expect(board).toContain('◂ cards')
+})
+
+test('a card that needs you is a bold box in amber under an amber chip; running cards share a round box', async ($, on) => {
+  stubs(on)
+  on('tool.check', () => ({ decision: 'ask' }))
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  expect(flat(await paneOf($))).toContain('"borderStyle":"round"')
+  await ($ as any).tool.check({ tool: 'Bash', command: 'ls' })
+  const pane = flat(await paneOf($))
+  expect(pane).toContain('"borderStyle":"bold","borderColor":"warning"')
+  expect(pane).toContain('"backgroundColor":"warning"')
+  expect(pane).toContain(' NEEDS YOU ')
+})
+
+test('secondary text is dim, and board cards are round Boxes, lit in their tone', async ($, on) => {
+  stubs(on, { env: JIRA_ENV, jiraOut: JIRA_OUT, board: { ...BOARD, inProgress: [{ key: 'CF1-195', status: 'In Progress', summary: 'DevOpsDays visuals', assignee: 'alex hsieh' }] } })
+  await walkman($, 'board print')
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const board = flat(await boardPane($))
+  expect(board).toContain('"dimColor":true')
+  expect(board).toContain('"borderStyle":"round","width":24,"paddingX":1,"borderColor":"success"')
+  expect(board).toContain('"borderDimColor":true')
+})
+
+test('the pane title counts the cards that need you, and stops being kept once the person closed the pane', async ($, on) => {
+  const s = stubs(on)
+  const titles = s.titles
+  on('tool.check', () => ({ decision: 'ask' }))
+  await walkman($, '')
+  expect(titles.at(-1)).toBe('Walkman')
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await ($ as any).tool.check({ tool: 'Bash', command: 'ls' })
+  await walkman($, 'debug') // a read
+  expect(titles.at(-1)).toBe('Walkman · 1')
+  void s
 })

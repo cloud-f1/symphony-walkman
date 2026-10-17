@@ -4,8 +4,9 @@ import type { JiraIssue } from './jira.ts'
 
 // A styled run of text. Tones follow the status line: green = going, red = needs you or failed,
 // yellow = a number worth a glance, subtle = quiet. The adapter maps a tone to a theme color.
-export type Tone = 'success' | 'error' | 'warning' | 'subtle' | 'text'
-export type Seg = { text: string; tone?: Tone; bold?: boolean }
+// `subtle` is drawn dim (secondary text); `inverse` is text on a coloured `bg` (a chip).
+export type Tone = 'success' | 'error' | 'warning' | 'subtle' | 'text' | 'inverse'
+export type Seg = { text: string; tone?: Tone; bold?: boolean; bg?: Tone }
 export type Line = Seg[]
 
 const GLYPH: Record<Light, string> = { walking: '🟢', waiting: '🔴', failed: '🔴', done: '✓', idle: '○' }
@@ -43,7 +44,15 @@ const STEPS = ['created', 'planning', 'plan_ready', 'implementing', 'completed']
 export function progressBar(state: CardRow['runState']): string {
   const at = state === 'failed' || state === undefined ? -1 : STEPS.indexOf(state)
   if (at < 0) return ''
-  return '█'.repeat(at + 1) + '░'.repeat(STEPS.length - at - 1)
+  return '━'.repeat(at + 1) + '─'.repeat(STEPS.length - at - 1)
+}
+
+// A thin meter (htop and prismantis style): the filled part ━ in its tone, the rest ─ dim. A full block █ fills the
+// whole cell height and drew the least important line as the loudest thing on the pane (owner screenshot 2026-10-17).
+export function meterSegs(fraction: number, cellCount: number, tone: Tone): Seg[] {
+  const f = Math.max(0, Math.min(1, fraction))
+  const n = f === 0 ? 0 : Math.max(1, Math.min(cellCount, Math.round(f * cellCount)))
+  return [{ text: '━'.repeat(n), tone }, { text: '─'.repeat(cellCount - n), tone: 'subtle' as const }].filter((s) => s.text !== '')
 }
 
 // The strip above the prompt: the most urgent card, then how many more.
@@ -94,8 +103,10 @@ const othersLines = (others: readonly JiraIssue[], narrow: boolean): Line[] => {
 // expands into a card of its own, in different colors, so the one thing to act on is the loudest thing on screen.
 
 // One drawn line: `left` as it is, `right` (a time) flush to the right edge when the surface can.
-// `meter` (a board column) is drawn before `right`: a picture where the terminal can, meterText elsewhere.
-export type PaneLine = { left: Line; right?: Line; meter?: { fraction: number; category: 'To Do' | 'In Progress' | 'Done'; cells: number } }
+// `box`: consecutive lines with the same box id are drawn inside one bordered box (bold for a card that needs you or
+// failed, round for the running cards), so urgency shows in the border's weight and colour.
+export type PaneBox = { id: number; style: 'bold' | 'round'; tone: Tone }
+export type PaneLine = { left: Line; right?: Line; box?: PaneBox }
 export type PaneSize = { columns?: number; rows?: number }
 
 // A whole minute and nothing finer: the pane is for a glance, so it need not redraw every second.
@@ -107,8 +118,7 @@ export function formatMinutes(ms: number): string {
 }
 
 export function diskBar(usedPct: number, cellCount = 8): string {
-  const n = Math.max(0, Math.min(cellCount, Math.round((usedPct / 100) * cellCount)))
-  return '▕' + '█'.repeat(n) + '░'.repeat(cellCount - n) + '▏'
+  return meterSegs(usedPct / 100, cellCount, 'text').map((s) => s.text).join('')
 }
 
 // Terminal cells, not characters: Chinese and other full-width characters take two.
@@ -135,10 +145,10 @@ const PANE_TONE: Record<Light, Tone> = { waiting: 'warning', failed: 'error', wa
 // in plan_ready, nothing else. The question itself is not available, so it is not made up.
 const reasonOf = (r: CardRow): string => r.why ?? (r.runState === 'plan_ready' ? 'plan is ready for your review' : 'a permission question is waiting')
 
-// `board`: the BOARD lane (jiraboard.ts), the least urgent thing on the pane, so it is the first to go when rows run out.
-// `top`: overview lines drawn right under the title (the Jira summary, jiraboard.ts), htop style; they always stay.
-export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now: number, others: readonly JiraIssue[] = [], size: PaneSize = {}, board: readonly PaneLine[] = [], top: readonly PaneLine[] = []): PaneLine[] {
+// `top`: overview lines drawn right under the title (the Jira meter, jiraboard.ts), htop style; they always stay.
+export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now: number, others: readonly JiraIssue[] = [], size: PaneSize = {}, top: readonly PaneLine[] = []): PaneLine[] {
   const width = Math.max(24, (size.columns ?? 44) - 2) // the pane has one cell of padding on each side
+  const inner = width - 2 // inside a bordered box
   const count = (l: Light) => rows.filter((r) => r.light === l).length
   const longestFirst = (l: Light) => rows.filter((r) => r.light === l).sort((a, b) => a.sinceMs - b.sinceMs)
   const needs = longestFirst('waiting')
@@ -155,49 +165,53 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
     const tone: Tone = disk.usedPct >= 90 ? 'error' : disk.usedPct >= 80 ? 'warning' : 'success'
     const free = `${disk.freeGb} GB free`
     const freeTone: Tone = disk.usedPct >= 80 ? tone : 'subtle'
-    // the full line, or a shorter one when the pane is narrow: bar and numbers, then the numbers alone
+    // the full line, or a shorter one when the pane is narrow: meter and numbers, then the numbers alone
     const forms: Line[] = [
-      [{ text: 'disk ', tone: 'subtle' }, { text: diskBar(disk.usedPct), tone }, { text: ` ${disk.usedPct}% · `, tone: 'subtle' }, { text: free, tone: freeTone }],
-      [{ text: 'disk ', tone: 'subtle' }, { text: `${disk.usedPct}%`, tone }, { text: ' · ', tone: 'subtle' }, { text: free, tone: freeTone }],
-      [{ text: `${disk.usedPct}% · `, tone }, { text: free, tone: freeTone }],
+      [{ text: 'disk ', tone: 'subtle' }, ...meterSegs(disk.usedPct / 100, 8, tone), { text: `  ${disk.usedPct}%  `, tone: 'subtle' }, { text: free, tone: freeTone }],
+      [{ text: 'disk ', tone: 'subtle' }, { text: `${disk.usedPct}%`, tone }, { text: '  ', tone: 'subtle' }, { text: free, tone: freeTone }],
+      [{ text: `${disk.usedPct}%  `, tone }, { text: free, tone: freeTone }],
     ]
     overview.push({ left: forms.find((f) => cells(plain(f)) <= width) ?? (forms[2] as Line) })
   }
   overview.push(...top)
-  const footer: PaneLine[] = []
 
-  // The body, as items that stay whole: a lane title belongs to its first item, a card is one or two lines.
-  type Item = { lane?: PaneLine; lines: PaneLine[]; counted?: boolean } // `counted`: a card or a Jira row, what "+N more" counts
+  // The body, as items that stay whole: a lane chip belongs to its first item; `boxRows` is the border a new box adds.
+  type Item = { lane?: PaneLine; lines: PaneLine[]; counted?: boolean; boxRows?: number } // `counted`: what "+N more" counts
   const items: Item[] = []
+  let boxId = 0
   const title = (r: CardRow) => plainText(r.title ?? (r.slug === '' ? r.branch : r.slug))
-  const lane = (symbol: string, label: string, tone: Tone): PaneLine => ({ left: [{ text: `${symbol} ${label}`, tone, bold: true }] })
-  const firstOf = (l: Light, n: number) => (n === 0 ? lane(SYMBOL[l], l === 'waiting' ? 'NEEDS YOU' : l === 'failed' ? 'FAILED' : 'RUNNING', PANE_TONE[l]) : undefined)
-  const head = (r: CardRow, mark: Seg, right: string, extra: string): PaneLine => {
-    const room = Math.max(6, width - cells(mark.text) - 1 - r.key.length - 2 - cells(right) - 1 - cells(extra))
+  // a chip: the lane's name on its colour, drawn alike in every terminal
+  const chip = (label: string, tone: Tone): PaneLine => ({ left: [{ text: ` ${label} `, tone: 'inverse', bg: tone, bold: true }] })
+  const firstOf = (l: Light, n: number) => (n === 0 ? chip(l === 'waiting' ? 'NEEDS YOU' : l === 'failed' ? 'FAILED' : 'RUNNING', PANE_TONE[l]) : undefined)
+  const head = (r: CardRow, mark: Seg, right: string, extra: string, w: number): PaneLine => {
+    const room = Math.max(6, w - cells(mark.text) - 1 - r.key.length - 2 - cells(right) - 1 - cells(extra))
     return { left: [mark, { text: ' ' + r.key, bold: true }, { text: '  ' + clipCells(title(r), room), tone: 'text' }], right: [{ text: right, tone: 'subtle' }] }
   }
+  // a card that needs you or failed: its own box, bold and in its colour
   const card = (r: CardRow, light: Light): PaneLine[] => {
-    const bar: Seg = { text: '┃', tone: PANE_TONE[light], bold: true }
-    const line = head(r, bar, formatMinutes(now - r.sinceMs), '')
-    return light === 'waiting' ? [line, { left: [bar, { text: '  ' + clipCells(reasonOf(r), width - 4), tone: PANE_TONE[light] }] }] : [line]
+    const box: PaneBox = { id: ++boxId, style: 'bold', tone: PANE_TONE[light] }
+    const line = { ...head(r, { text: SYMBOL[light], tone: PANE_TONE[light], bold: true }, formatMinutes(now - r.sinceMs), '', inner), box }
+    return light === 'waiting' ? [line, { left: [{ text: '  ' + clipCells(reasonOf(r), inner - 2), tone: PANE_TONE[light] }], box }] : [line]
   }
-  needs.forEach((r, i) => items.push({ lane: firstOf('waiting', i), lines: card(r, 'waiting'), counted: true }))
-  failed.forEach((r, i) => items.push({ lane: firstOf('failed', i), lines: card(r, 'failed'), counted: true }))
+  needs.forEach((r, i) => items.push({ lane: firstOf('waiting', i), lines: card(r, 'waiting'), counted: true, boxRows: 2 }))
+  failed.forEach((r, i) => items.push({ lane: firstOf('failed', i), lines: card(r, 'failed'), counted: true, boxRows: 2 }))
+  // the running cards share one round box
+  const runBox: PaneBox = { id: ++boxId, style: 'round', tone: 'success' }
   running.forEach((r, i) => {
     const steps = progressBar(r.runState)
     const todo = r.todo && r.todo.total > 0 ? `${r.todo.done}/${r.todo.total}` : ''
     const extra = [todo, steps].filter((x) => x !== '').join(' ')
-    const line = head(r, { text: SYMBOL.walking, tone: 'success', bold: true }, formatMinutes(now - r.sinceMs), extra === '' ? '' : extra + ' ')
+    const line: PaneLine = { ...head(r, { text: SYMBOL.walking, tone: 'success', bold: true }, formatMinutes(now - r.sinceMs), extra === '' ? '' : extra + ' ', inner), box: runBox }
     if (extra !== '') line.right = [...(todo ? [{ text: todo + ' ', tone: 'subtle' as const }] : []), ...(steps ? [{ text: steps + ' ', tone: 'success' as const }] : []), ...(line.right ?? [])]
     // its subagents, one row each, under it (WALK-28)
     const agents = r.agents ?? []
     const shown = agents.slice(0, AGENTS_MAX).map((a): PaneLine => {
       const mark = SYMBOL[a.light]
-      const room = Math.max(6, width - 4 - cells(a.type) - 2 - 5)
-      return { left: [{ text: '  └ ', tone: 'subtle' }, { text: mark, tone: PANE_TONE[a.light], bold: true }, { text: ' ' + plainText(a.type), tone: 'text' }, { text: '  ' + clipCells(plainText(a.task), room), tone: 'subtle' }], right: [{ text: formatMinutes(now - a.sinceMs), tone: 'subtle' }] }
+      const room = Math.max(6, inner - 4 - cells(a.type) - 2 - 5)
+      return { left: [{ text: '  └ ', tone: 'subtle' }, { text: mark, tone: PANE_TONE[a.light], bold: true }, { text: ' ' + plainText(a.type), tone: 'text' }, { text: '  ' + clipCells(plainText(a.task), room), tone: 'subtle' }], right: [{ text: formatMinutes(now - a.sinceMs), tone: 'subtle' }], box: runBox }
     })
-    if (agents.length > AGENTS_MAX) shown.push({ left: [{ text: `    +${agents.length - AGENTS_MAX} more agents`, tone: 'subtle' }] })
-    items.push({ lane: firstOf('walking', i), lines: [line, ...shown], counted: true })
+    if (agents.length > AGENTS_MAX) shown.push({ left: [{ text: `    +${agents.length - AGENTS_MAX} more agents`, tone: 'subtle' }], box: runBox })
+    items.push({ lane: firstOf('walking', i), lines: [line, ...shown], counted: true, boxRows: i === 0 ? 2 : 0 })
   })
   if (quiet) {
     items.push({ lines: [{ left: rows.length === 0 ? [{ text: 'no card branch · work in a KEY-n-slug branch', tone: 'subtle' }] : [{ text: '✓ ', tone: 'success' }, { text: 'all quiet', tone: 'subtle' }] }] })
@@ -210,21 +224,20 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
   }
   others.slice(0, OTHERS_MAX).forEach((i, n) => {
     const line: PaneLine = { left: [{ text: '  ' + i.key, bold: true }, { text: '  ' + clipCells(plainText(i.summary), Math.max(6, width - 2 - i.key.length - 2)), tone: 'subtle' }] }
-    items.push({ lane: n === 0 ? lane('◌', 'IN JIRA', 'subtle') : undefined, lines: [line], counted: true })
+    items.push({ lane: n === 0 ? { left: [{ text: '◌ IN JIRA', tone: 'subtle', bold: true }] } : undefined, lines: [line], counted: true })
   })
   const extraOthers = others.length - OTHERS_MAX
-  const boardItem: Item | undefined = board.length > 0 ? { lines: [{ left: [] }, ...board] } : undefined
 
-  // Fit the rows the surface has: whole items only, then "+N more"; the title and the disk line always stay.
-  const budget = size.rows === undefined ? Infinity : Math.max(2 + overview.length + footer.length, size.rows - 1)
+  // Fit the rows the surface has: whole items only, then "+N more"; the title and the meters always stay.
+  const budget = size.rows === undefined ? Infinity : Math.max(2 + overview.length, size.rows - 1)
   const out: PaneLine[] = [header, ...overview]
   if (overview.length > 0) out.push({ left: [{ text: '─'.repeat(width), tone: 'subtle' }] })
-  let used = out.length + footer.length
+  let used = out.length
   let hidden = 0
   let overflow = false
   for (let i = 0; i < items.length; i++) {
     const it = items[i] as Item
-    const need = it.lines.length + (it.lane ? 1 : 0)
+    const need = it.lines.length + (it.lane ? 1 : 0) + (it.boxRows ?? 0)
     const last = i === items.length - 1 && extraOthers <= 0
     if (!overflow && used + need + (last ? 0 : 1) <= budget) {
       if (it.lane) out.push(it.lane)
@@ -237,9 +250,7 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
   }
   if (hidden > 0) out.push({ left: [{ text: `  +${hidden + Math.max(0, extraOthers)} more`, tone: 'subtle' }] })
   else if (extraOthers > 0) out.push({ left: [{ text: `  +${extraOthers} more`, tone: 'subtle' }] })
-  // the board only where it fits whole, after everything that can need you
-  if (boardItem && !overflow && out.length + boardItem.lines.length + footer.length <= budget) out.push(...boardItem.lines)
-  return [...out, ...footer]
+  return out
 }
 
 // The printed board (plain text is the contract; tones are used where the surface can draw them).

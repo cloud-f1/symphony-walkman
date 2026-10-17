@@ -35,8 +35,8 @@ test('disk tone warns at 80% and errors at 90%', () => {
 })
 
 test('progress bar for symphony run states', () => {
-  assert.equal(progressBar('plan_ready'), '███░░')
-  assert.equal(progressBar('completed'), '█████')
+  assert.equal(progressBar('plan_ready'), '━━━──')
+  assert.equal(progressBar('completed'), '━━━━━')
   assert.equal(progressBar('failed'), '')
   assert.equal(progressBar(undefined), '')
 })
@@ -125,10 +125,11 @@ test('minutes only: <1m, 45m, 1h05m', () => {
   assert.equal(formatMinutes(65 * MIN), '1h05m')
 })
 
-test('the disk bar fills with usage and its tone follows 80% and 90%', () => {
-  assert.equal(diskBar(23), '▕██░░░░░░▏')
-  assert.equal(diskBar(100), '▕████████▏')
-  const tone = (usedPct: number) => stylePane([row({ light: 'idle' })], { freeGb: 4, usedPct }, NOW)[1]?.left.find((x) => x.text.includes('▕'))?.tone
+test('the disk meter is a thin line (━ filled, ─ dim, never a full block) and its tone follows 80% and 90%', () => {
+  assert.equal(diskBar(23), '━━──────')
+  assert.equal(diskBar(100), '━━━━━━━━')
+  assert.ok(!/[█░]/.test(paneText(stylePane([row({ light: 'idle' })], { freeGb: 4, usedPct: 50 }, NOW)).join('')), 'a full block is drawn')
+  const tone = (usedPct: number) => stylePane([row({ light: 'idle' })], { freeGb: 4, usedPct }, NOW)[1]?.left.find((x) => x.text.includes('━'))?.tone
   assert.equal(tone(23), 'success')
   assert.equal(tone(84), 'warning')
   assert.equal(tone(95), 'error')
@@ -169,12 +170,13 @@ test('pane: needs you and failed use different colors, and each has its own symb
   const lines = stylePane([row({ light: 'waiting', sinceMs: at(1) }), row({ key: 'CF1-2', light: 'failed', sinceMs: at(1) })], undefined, NOW)
   const needs = lines.find((l) => plain(l.left).includes('CF1-195'))
   const failed = lines.find((l) => plain(l.left).includes('CF1-2'))
-  const accent = (l: PaneLine | undefined) => l?.left.find((x) => x.text.includes('┃'))?.tone
-  assert.equal(accent(needs), 'warning')
-  assert.equal(accent(failed), 'error')
-  assert.notEqual(accent(needs), accent(failed))
-  const t = paneText(lines).join('\n')
-  assert.ok(t.includes('⚠ NEEDS YOU') && t.includes('✕ FAILED'))
+  // each in its own bold box in its own colour, behind a chip on that colour
+  assert.deepEqual([needs?.box?.style, needs?.box?.tone], ['bold', 'warning'])
+  assert.deepEqual([failed?.box?.style, failed?.box?.tone], ['bold', 'error'])
+  assert.notEqual(needs?.box?.id, failed?.box?.id)
+  assert.ok(plain(needs?.left ?? []).startsWith('⚠') && plain(failed?.left ?? []).startsWith('✕'))
+  const chips = lines.flatMap((l) => l.left).filter((x) => x.bg)
+  assert.deepEqual(chips.map((x) => [x.text, x.bg, x.tone]), [[' NEEDS YOU ', 'warning', 'inverse'], [' FAILED ', 'error', 'inverse']])
 })
 
 test('pane: a long title, Chinese included, is cut to the pane and never wraps', () => {
@@ -225,7 +227,8 @@ test('pane: a running card of a symphony run shows its five-step bar, still insi
   const lines = stylePane([row({ key: 'W-1', title: 'a long title that has to give way to the bar and the time', light: 'walking', runState: 'implementing', sinceMs: at(12) })], undefined, NOW)
   const line = lines.find((l) => plain(l.left).includes('W-1')) as PaneLine
   const all = plain(line.left) + ' ' + plain(line.right ?? [])
-  assert.ok(all.includes('████░') && all.includes('12m'), all)
+  assert.ok(all.includes('━━━━─') && all.includes('12m'), all)
+  assert.deepEqual([line.box?.style, line.box?.tone], ['round', 'success'], 'running cards share one round box')
   assert.ok(cells(all) <= 42, `too wide: ${all}`)
 })
 

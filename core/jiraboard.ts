@@ -1,7 +1,7 @@
 import { clip } from './board.ts'
 import { isProject } from './jira.ts'
-import { cells, formatMinutes, plainText } from './style.ts'
-import type { PaneLine, Seg, Tone } from './style.ts'
+import { cells, formatMinutes, meterSegs, plainText } from './style.ts'
+import type { PaneLine, Seg } from './style.ts'
 
 // The project's Jira board, read only: open Story-level issues by status column, Done only as a count.
 // symphony-workflow's `call search_issues` returns key, summary, status and assignee, not the status category,
@@ -91,72 +91,31 @@ export function boardText(project: string, board: Board): string[] {
 
 export const METER_CELLS = 8
 
-// A meter as text: filled cells then empty ones; a column with any issue shows at least one filled cell.
+// A thin meter as text (━ filled, ─ the rest); a column with any issue shows at least one filled cell.
 export function meterText(fraction: number, cells = METER_CELLS): string {
   const f = Math.max(0, Math.min(1, fraction))
   const n = f === 0 ? 0 : Math.max(1, Math.min(cells, Math.round(f * cells)))
-  return '▰'.repeat(n) + '▱'.repeat(cells - n)
-}
-
-const CATEGORY_TONE: Record<Category, Tone> = { 'To Do': 'subtle', 'In Progress': 'success', Done: 'success' }
-
-// The BOARD lane of the side pane: one line per column (name, meter, count), then the done count.
-export function boardPaneLines(board: Board | undefined, width: number): PaneLine[] {
-  if (!board) return []
-  const lines: PaneLine[] = [{ left: [{ text: '▤ BOARD', tone: 'subtle', bold: true }] }]
-  const room = Math.max(6, width - METER_CELLS - 6)
-  for (const col of board.columns) {
-    lines.push({
-      left: [{ text: '  ' + clip(plainText(col.status), room), tone: CATEGORY_TONE[col.category] }],
-      right: [{ text: ' ' + String(col.issues.length).padStart(3), tone: 'text', bold: true }],
-      meter: { fraction: board.open === 0 ? 0 : col.issues.length / board.open, category: col.category, cells: METER_CELLS },
-    })
-  }
-  lines.push({ left: [{ text: `  ✓ ${doneText(board)} · ${DONE_DAYS}d`, tone: 'subtle' }] })
-  return lines
-}
-
-// The same meter as a picture, for terminals that draw images (kitty, Ghostty): RGBA pixels, base64.
-const COLOR: Record<Category, [number, number, number]> = { 'To Do': [137, 147, 164], 'In Progress': [76, 154, 255], Done: [54, 179, 126] }
-const REST: [number, number, number, number] = [128, 128, 128, 90]
-
-export function meterRgba(fraction: number, category: Category, width = 64, height = 8): { rgba: string; width: number; height: number } {
-  const f = Math.max(0, Math.min(1, fraction))
-  const filled = f === 0 ? 0 : Math.max(1, Math.round(f * width))
-  const [r, g, b] = COLOR[category]
-  const bytes = new Uint8Array(width * height * 4)
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const px = x < filled ? [r, g, b, 255] : REST
-      bytes.set(px, (y * width + x) * 4)
-    }
-  }
-  let bin = ''
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-  return { rgba: btoa(bin), width, height }
+  return '━'.repeat(n) + '─'.repeat(cells - n)
 }
 
 // The Jira overview line for the top of a pane (htop style): one stacked meter (to do grey, in progress green,
 // done as plain text), the three counts, and how long ago the board was read.
 export function boardOverview(board: Board, ageMs: number, width: number, cellCount = 8): PaneLine {
-  // The meter is the open work only (to do grey, in progress green): with most Stories done, a meter that
-  // counted done would be nearly all done, the least urgent part drawn loudest (owner screenshot 2026-10-16).
+  // The meter is the open work only (in progress green over all open): with most Stories done, a meter that counted
+  // done would be nearly all done, the least urgent part drawn loudest (owner screenshot 2026-10-16). Thin, like the disk.
   const todo = board.columns.filter((c) => c.category === 'To Do').reduce((n, c) => n + c.issues.length, 0)
   const doing = board.open - todo
   const done = board.done.count
-  const open = todo + doing
-  let b = open === 0 || doing === 0 ? 0 : Math.max(1, Math.round((doing / open) * cellCount))
-  let a = open === 0 ? 0 : cellCount - b
-  if (todo > 0 && a === 0) [a, b] = [1, cellCount - 1]
-  const right: Seg[] = [{ text: formatMinutes(ageMs).replace('<1m', 'now') + (ageMs < 60_000 ? '' : ' ago'), tone: 'subtle' }]
-  const counts = `○ ${todo}  ● ${doing}  ✓ ${done}${board.done.capped ? '+' : ''}` // to do, in progress, done in 14 days
-  const parts: Seg[] = [{ text: '█'.repeat(a), tone: 'subtle' }, { text: '█'.repeat(b), tone: 'success' }, { text: '░'.repeat(open === 0 ? cellCount : 0), tone: 'subtle' }]
-  const meter = parts.filter((s) => s.text !== '')
+  const right: Seg[] = [{ text: ageMs < 60_000 ? 'now' : formatMinutes(ageMs), tone: 'subtle' }] // how old the read is
+  const doneText = `${done}${board.done.capped ? '+' : ''}`
+  const meter = board.open === 0 ? [{ text: '─'.repeat(cellCount), tone: 'subtle' as const }] : meterSegs(doing / board.open, cellCount, 'success')
   const room = width - cells(plain0(right)) - 1
-  const full: Seg[] = [{ text: 'jira ', tone: 'subtle' }, { text: '▕', tone: 'subtle' }, ...meter, { text: '▏ ', tone: 'subtle' }, { text: counts, tone: 'subtle' }]
-  if (cells(plain0(full)) <= room) return { left: full, right }
-  return { left: [{ text: 'jira ', tone: 'subtle' }, { text: clipToCells(counts, room - 5), tone: 'subtle' }], right }
+  const forms: Seg[][] = [
+    [{ text: 'jira ', tone: 'subtle' }, ...meter, { text: '  ' }, { text: `${todo} todo  ${doing} doing  ${doneText} done`, tone: 'subtle' }],
+    [{ text: 'jira ', tone: 'subtle' }, ...meter, { text: '  ' }, { text: `○${todo} ●${doing} ✓${doneText}`, tone: 'subtle' }],
+    [{ text: 'jira ', tone: 'subtle' }, { text: `○${todo} ●${doing} ✓${doneText}`, tone: 'subtle' }],
+  ]
+  return { left: forms.find((f) => cells(plain0(f)) <= room) ?? (forms[2] as Seg[]), right }
 }
 
 const plain0 = (line: Seg[]): string => line.map((s) => s.text).join('')
-const clipToCells = (text: string, max: number): string => (cells(text) <= max ? text : clip(text, Math.max(4, max)))
