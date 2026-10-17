@@ -16,6 +16,7 @@ A model cannot run slash commands. Answer from what you know, then tell the user
 | The whole Jira board | `/walkman board` (the pane's board view; `b` switches views, `h` / `l` move columns, arrows scroll, Esc closes) |
 | The same as text in the conversation | `/walkman board print` |
 | Why something is empty or stale | `/walkman doctor` |
+| To see every animation without real work | `/walkman demo`, then `d` for the next scene |
 | Versions | `/walkman version`; legend: `/walkman help` |
 
 Outside a session: `npx --yes github:cloud-f1/symphony-walkman doctor` checks the setup, `... card KEY-n` creates a card worktree, `... configure --dry-run` plans the Jira project for every repo in a folder.

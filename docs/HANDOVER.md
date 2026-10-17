@@ -1,4 +1,4 @@
-# Handover (state at v0.13.0, refreshed 2026-10-18)
+# Handover (state at v0.14.0, refreshed 2026-10-18)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.13.0` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.14.0` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -140,4 +140,5 @@ Docker was removed so nothing remains there.
 - Terminal pedestrian signal (v0.12.0, WALK-179): the original ask (a Taiwan crossing light) had only ever existed as the Desktop SVG (`core/svg.ts`, surface `desktop` only). `core/signal.ts` draws it in the cards view from half-block bitmaps (6x8 pixels -> 6x4 cells): green walking (two frames, `FRAME_MS` 500 ms, 250 ms once 3/4 of the TodoWrite list is done), amber standing for needs you (owner's rule: needs you and failed never share a colour), red blinking for failed, grey standing when quiet. The frame comes from the clock, so the core stays pure. `syncTicker` runs at the frame rate only while `paneOpen && paneView === 'cards'` and the lead walks or failed; pane close (event or `/walkman pane close`) and the `b` toggle re-sync it.
 - Green man look and block meters (v0.12.1, WALK-184, owner feedback with a photo of a Taipei crossing and the status line): the figure is a side view (10 x 14 pixels -> 10 x 7 cells, `WALK_A` stride, `WALK_B` passing, `STAND`), with `bigDigits` (3 x 5 font, amber) beside it as the countdown. Meters are back to blocks like the status line: `█` fill and `░` track in the same tone. Do not use `dimColor` for a coloured track: the engine draws it grey, and an empty meter then looks full.
 - Playground (v0.13.0, WALK-188, a user's idea: many cards, many people running laps): `core/track.ts` draws an oval track in the pane's free rows (`scroll.bodyRows`, not `viewport.rows`, which is the terminal's) with one braille runner (4 x 4 px in two cells) per running, waiting or failed card; places come from the clock (`runnerOf`), colours from `trackTones` (card0..card5 -> claude, ide, planMode, merged, suggestion, bashBorder: the theme keys that draw distinct colours; suggestion/permission/remember and merged/autoAccept draw alike). The ticker runs at 250 ms whenever any card walks and the cards view is open.
+- Demo mode (v0.14.0, WALK-193): `core/demo.ts` holds seven scenes, each a function of (began, now) that returns made-up `DEMO-n` rows; `demo` (0 off, 1..7) and `demoBegan` live in register.ts. In a scene the cards view uses the demo rows for the signal, the list and the playground and leaves out the Jira line and lane; toasts and the title count still read `cache.rows`, so a demo never fires them. The `d` Button sits on its own row (the header is full). The ticker counts an open scene past Dawn as active. Use it to check animation changes: `/walkman demo`, then `d`.
 - Process (2026-10-18): open cards with `symphony-workflow start KEY` (In Progress, `.worktrees/`), PRs with `pr KEY` (In Review), close with `land KEY` (Done). Up to WALK-184 cards were made by hand and jumped Backlog -> Done, so the board never showed work in progress.
