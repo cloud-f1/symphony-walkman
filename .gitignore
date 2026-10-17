@@ -12,3 +12,6 @@ node_modules/
 /core/*.js
 /hooks/*.js
 /tests/*.js
+
+# card worktrees made by `symphony-workflow start`
+/.worktrees/

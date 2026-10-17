@@ -5,7 +5,8 @@ import type { JiraIssue } from './jira.ts'
 // A styled run of text. Tones follow the status line: green = going, red = needs you or failed,
 // yellow = a number worth a glance, subtle = quiet. The adapter maps a tone to a theme color.
 // `subtle` is drawn dim (secondary text); `inverse` is text on a coloured `bg` (a chip).
-export type Tone = 'success' | 'error' | 'warning' | 'subtle' | 'text' | 'inverse'
+// card0..card7: a card's own colour on the playground (WALK-188), from theme keys with no status meaning.
+export type Tone = 'success' | 'error' | 'warning' | 'subtle' | 'text' | 'inverse' | 'card0' | 'card1' | 'card2' | 'card3' | 'card4' | 'card5'
 export type Seg = { text: string; tone?: Tone; bold?: boolean; bg?: Tone }
 export type Line = Seg[]
 

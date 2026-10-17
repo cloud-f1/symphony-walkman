@@ -753,3 +753,29 @@ test('quiet: a grey man standing and no timer; closing the pane stops the walkin
   await s.clock.advance(5_000)
   expect(s.invalidated.n).toBe(before) // the pane is closed: back to the 30-second clock
 })
+
+// ---------- WALK-188: the playground ----------
+test('a running card gets a runner on the playground under the cards, in its own theme colour', async ($, on) => {
+  stubs(on)
+  await walkman($, '')
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const pane = flat(await paneOf($, { columns: 44, rows: 40 }))
+  expect(pane).toContain('╱') // the oval's rim
+  expect(pane).toMatch(/[⠁-⣿]/) // a braille runner
+  expect(pane).toMatch(/"color":"(claude|ide|planMode|merged|suggestion|bashBorder)"/)
+})
+
+test('quiet: no playground and no runner', async ($, on) => {
+  stubs(on)
+  await walkman($, '')
+  const pane = flat(await paneOf($, { columns: 44, rows: 40 }))
+  expect(pane).not.toContain('╱')
+  expect(pane).not.toMatch(/[⠁-⣿]/)
+})
+
+test('a short pane leaves the playground out rather than squeezing the cards', async ($, on) => {
+  stubs(on)
+  await walkman($, '')
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  expect(flat(await paneOf($, { columns: 44, rows: 14 }))).not.toContain('╱')
+})

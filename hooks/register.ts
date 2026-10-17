@@ -16,6 +16,7 @@ import { HELP, LEGEND, plain, stylePane, styleBand } from '../core/style.ts'
 import type { Line, PaneLine, Seg, Tone } from '../core/style.ts'
 import { signalSvg } from '../core/svg.ts'
 import { FRAME_MS, SIGNAL_ROWS, leadOf, signalLines, signalPace } from '../core/signal.ts'
+import { playground } from '../core/track.ts'
 import { isRecordName, otherSessionLights, parsePs, parseRecord, parseTasklist } from '../core/sessions.ts'
 import type { SessionRecord } from '../core/sessions.ts'
 import { CARD_CELLS, boardGrid } from '../core/boardgrid.ts'
@@ -53,7 +54,12 @@ async function expandHome($: Engine, p: string): Promise<string> {
 
 
 // Tones follow the person's theme (the same keys the status line colors map to).
-const THEME: Record<Tone, string> = { success: 'success', error: 'error', warning: 'warning', subtle: 'inactive', text: 'text', inverse: 'inverseText' }
+const THEME: Record<Tone, string> = {
+  success: 'success', error: 'error', warning: 'warning', subtle: 'inactive', text: 'text', inverse: 'inverseText',
+  // a card's own colour on the playground: theme keys that say nothing about status and draw as different colours
+  // (measured 2026-10-18 in the dark theme: suggestion, permission and remember draw alike, so do merged and autoAccept)
+  card0: 'claude', card1: 'ide', card2: 'planMode', card3: 'merged', card4: 'suggestion', card5: 'bashBorder',
+}
 
 // Secondary text (`subtle`) is drawn dim in the theme's own text colour; a `bg` makes a chip.
 const textProps = (seg: Seg): Record<string, unknown> => ({
@@ -325,13 +331,16 @@ async function refresh($: Engine): Promise<void> {
 // a failed man blinking), the timer runs at the signal's frame rate (WALK-179); a quiet signal stands still.
 const TICK_MS = 30_000
 const TICK_DESKTOP_MS = 1_000
+const RUNNER_MS = 250 // a runner moves about a cell per frame
 let tickerMs = 0
 let desktopSeen = false
 function syncTicker($: Engine, rows: readonly CardRow[] = cache.rows): void {
   const active = rows.some((r) => r.light === 'walking' || r.light === 'waiting' || r.light === 'failed')
   const lead = leadOf(rows)
-  const moving = paneOpen && paneView === 'cards' && (lead?.light === 'walking' || lead?.light === 'failed')
-  const want = moving ? FRAME_MS[signalPace(lead)] : desktopSeen ? TICK_DESKTOP_MS : TICK_MS
+  // the playground's runners (WALK-188) move whenever any card runs, even while the signal stands for one that waits
+  const running = rows.some((r) => r.light === 'walking')
+  const moving = paneOpen && paneView === 'cards' && (running || lead?.light === 'failed')
+  const want = moving ? (running ? RUNNER_MS : FRAME_MS[signalPace(lead)]) : desktopSeen ? TICK_DESKTOP_MS : TICK_MS
   try {
     if (ticker && (!active || tickerMs !== want)) {
       ticker.cancel()
@@ -717,11 +726,18 @@ export function register(on: On, options?: PluginOptions) {
     const top = boardState.board ? [boardOverview(boardState.board, now - boardState.at, width - 2)] : []
     // the pedestrian signal sits under the title (WALK-179); the cards below get the rows it leaves
     const signal = signalLines(leadOf(v.rows), now, width)
-    const rowsLeft = e.viewport?.rows === undefined ? undefined : Math.max(4, e.viewport.rows - SIGNAL_ROWS - 2)
+    // the pane's own rows (viewport is the terminal's: using it drew the playground past the pane's bottom edge)
+    const paneRows = (e.props as { scroll?: { bodyRows?: number } }).scroll?.bodyRows ?? e.viewport?.rows
+    const rowsLeft = paneRows === undefined ? undefined : Math.max(4, paneRows - SIGNAL_ROWS - 2)
     const [header, ...rest] = stylePane(v.rows, cache.disk, now, v.others, { rows: rowsLeft, columns: width }, top)
     // the header row: title and counts, then the view switch
     const headRow = h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, styled(Box, Text, (header as PaneLine).left), h(Box, { flexDirection: 'row' }, styled(Box, Text, (header as PaneLine).right ?? []), ...(toggle ? [h(Text, null, '  '), toggle] : [])))
-    return h(Box, { flexDirection: 'column', paddingX: 1 }, headRow, ...paneBody(Box, Text, signal), ...paneBody(Box, Text, rest)) as RenderElement
+    // the playground (WALK-188) takes the rows left under the cards: a bordered group costs two extra rows
+    const boxes = new Set(rest.map((l) => (l as PaneLine).box?.id).filter((id) => id !== undefined)).size
+    const used = 1 + SIGNAL_ROWS + 2 + rest.length + 2 * boxes
+    const free = paneRows === undefined ? 0 : paneRows - used - 1
+    const track = playground(v.rows, now, width - 2, Math.min(14, free))
+    return h(Box, { flexDirection: 'column', paddingX: 1 }, headRow, ...paneBody(Box, Text, signal), ...paneBody(Box, Text, rest), ...(track.length > 0 ? [h(Text, null, ' '), ...paneBody(Box, Text, track)] : [])) as RenderElement
   })
 
   // The person closed the pane (its x, Esc, /walkman pane close): stop keeping its title current.
