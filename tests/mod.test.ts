@@ -599,9 +599,10 @@ test('the side pane puts the disk meter and the Jira overview on top, under the 
   const pane: any = await paneOf($)
   const rows = (pane.children as any[]).map((r) => { texts.length = 0; walk(r); return texts.join('') })
   expect(rows[0]).toContain('WALKMAN')
-  expect(rows[1]).toContain('disk')
-  expect(rows[2]).toContain('jira')
-  expect(rows[2]).toContain('2 todo')
+  expect(rows[1]).toContain('quiet') // the pedestrian signal box (WALK-179) sits right under the title
+  expect(rows[2]).toContain('disk')
+  expect(rows[3]).toContain('jira')
+  expect(rows[3]).toContain('2 todo')
 })
 
 test('the board pane ends with its key bar', async ($, on) => {
@@ -663,7 +664,7 @@ test('one pane, two views: b switches between the cards and the board, and the s
   expect(cards).toContain('board ▸')
   expect(cards).not.toContain('▤ BOARD')
   expect(cards).not.toContain('"type":"Image"')
-  expect(cards).not.toMatch(/[█░▰▱]/)
+  expect(cards).not.toMatch(/[░▰▱]/) // full blocks only draw the signal's figure, never a meter
   await ($ as any).ui.press({ plugin: 'symphony-walkman', key: 'view', requestId: 'walkman-pane', surface: 'terminal' })
   const board = flat(await paneOf($))
   expect(board).toContain('BACKLOG')
@@ -703,4 +704,52 @@ test('the pane title counts the cards that need you, and stops being kept once t
   await walkman($, 'debug') // a read
   expect(titles.at(-1)).toBe('Walkman · 1')
   void s
+})
+
+// ---------- WALK-179: the terminal pedestrian signal ----------
+test('the green man walks while a card runs and the pane is open: redraws twice a second, faster near the end', async ($, on) => {
+  const s = stubs(on)
+  await walkman($, '') // opens the pane: only an open cards view animates
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const first = flat(await paneOf($))
+  expect(first).toContain('walking')
+  expect(first).toContain('"borderColor":"success"')
+  const before = s.invalidated.n
+  await s.clock.advance(2_000)
+  expect(s.invalidated.n).toBeGreaterThanOrEqual(before + 3) // about every 500 ms
+  // the two frames differ: the figure changes between two draws half a second apart
+  const a = flat(await paneOf($))
+  await s.clock.advance(500)
+  const b = flat(await paneOf($))
+  expect(a).not.toBe(b)
+})
+
+test('a card that needs you stands still in amber: no animation timer, only the minute clock', async ($, on) => {
+  const s = stubs(on)
+  on('tool.check', () => ({ decision: 'ask' }))
+  await walkman($, '')
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await ($ as any).tool.check({ tool: 'Bash', command: 'ls' })
+  const pane = flat(await paneOf($))
+  expect(pane).toContain('needs you')
+  expect(pane).toContain('"borderStyle":"round","borderColor":"warning"')
+  await s.clock.advance(4_000) // past the read cache, so the timer is re-chosen
+  await paneOf($)
+  const before = s.invalidated.n
+  await s.clock.advance(5_000)
+  expect(s.invalidated.n).toBe(before)
+})
+
+test('quiet: a grey man standing and no timer; closing the pane stops the walking timer', async ($, on) => {
+  const s = stubs(on)
+  await walkman($, '')
+  const quiet = flat(await paneOf($))
+  expect(quiet).toContain('nothing is crossing')
+  expect(quiet).toContain('"borderStyle":"round","borderColor":"inactive"')
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await paneOf($)
+  await walkman($, 'pane close')
+  const before = s.invalidated.n
+  await s.clock.advance(5_000)
+  expect(s.invalidated.n).toBe(before) // the pane is closed: back to the 30-second clock
 })

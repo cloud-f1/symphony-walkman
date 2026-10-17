@@ -15,6 +15,7 @@ import type { JiraIssue } from '../core/jira.ts'
 import { HELP, LEGEND, plain, stylePane, styleBand } from '../core/style.ts'
 import type { Line, PaneLine, Seg, Tone } from '../core/style.ts'
 import { signalSvg } from '../core/svg.ts'
+import { FRAME_MS, SIGNAL_ROWS, leadOf, signalLines, signalPace } from '../core/signal.ts'
 import { isRecordName, otherSessionLights, parsePs, parseRecord, parseTasklist } from '../core/sessions.ts'
 import type { SessionRecord } from '../core/sessions.ts'
 import { CARD_CELLS, boardGrid } from '../core/boardgrid.ts'
@@ -320,14 +321,17 @@ async function refresh($: Engine): Promise<void> {
 
 // A card that is running, waiting or failed has a clock that must keep moving; an idle board draws nothing on a timer.
 // The terminal shows whole minutes, so 30 seconds is enough; the Desktop signal counts seconds, so once one has been
-// drawn the timer runs every second again.
+// drawn the timer runs every second again. While the cards view is open and its signal moves (the green man walking,
+// a failed man blinking), the timer runs at the signal's frame rate (WALK-179); a quiet signal stands still.
 const TICK_MS = 30_000
 const TICK_DESKTOP_MS = 1_000
 let tickerMs = 0
 let desktopSeen = false
-function syncTicker($: Engine, rows: readonly CardRow[]): void {
+function syncTicker($: Engine, rows: readonly CardRow[] = cache.rows): void {
   const active = rows.some((r) => r.light === 'walking' || r.light === 'waiting' || r.light === 'failed')
-  const want = desktopSeen ? TICK_DESKTOP_MS : TICK_MS
+  const lead = leadOf(rows)
+  const moving = paneOpen && paneView === 'cards' && (lead?.light === 'walking' || lead?.light === 'failed')
+  const want = moving ? FRAME_MS[signalPace(lead)] : desktopSeen ? TICK_DESKTOP_MS : TICK_MS
   try {
     if (ticker && (!active || tickerMs !== want)) {
       ticker.cancel()
@@ -611,6 +615,7 @@ export function register(on: On, options?: PluginOptions) {
       try {
         const opened = await $.ui.open(paneArgs(true))
         paneOpen = true
+        syncTicker($)
         return opened.isPlaced
       } catch {
         return false
@@ -635,6 +640,8 @@ export function register(on: On, options?: PluginOptions) {
     if (sub === 'pane' && arg === 'close') {
       try {
         await $.ui.close({ id: PANE_ID })
+        paneOpen = false
+        syncTicker($) // the signal stops walking with the pane gone
         return { text: 'Pane closed.' }
       } catch {
         return { text: 'Could not close the pane here.' }
@@ -682,7 +689,10 @@ export function register(on: On, options?: PluginOptions) {
         // a redraw is a courtesy
       }
     }
-    const toggle = linked && Button ? h(Button, { key: 'view', label: paneView === 'board' ? '◂ cards' : 'board ▸', hotkey: 'b', plain: true, dimColor: true, onPress: redraw(() => (paneView = paneView === 'board' ? 'cards' : 'board')) }) : undefined
+    const toggle = linked && Button ? h(Button, { key: 'view', label: paneView === 'board' ? '◂ cards' : 'board ▸', hotkey: 'b', plain: true, dimColor: true, onPress: redraw(() => {
+      paneView = paneView === 'board' ? 'cards' : 'board'
+      syncTicker($)
+    }) }) : undefined
 
     if (paneView === 'board' && linked) {
       if (!boardState.board) {
@@ -705,15 +715,21 @@ export function register(on: On, options?: PluginOptions) {
 
     const v = view()
     const top = boardState.board ? [boardOverview(boardState.board, now - boardState.at, width - 2)] : []
-    const [header, ...rest] = stylePane(v.rows, cache.disk, now, v.others, { rows: e.viewport?.rows, columns: width }, top)
+    // the pedestrian signal sits under the title (WALK-179); the cards below get the rows it leaves
+    const signal = signalLines(leadOf(v.rows), now, width)
+    const rowsLeft = e.viewport?.rows === undefined ? undefined : Math.max(4, e.viewport.rows - SIGNAL_ROWS - 2)
+    const [header, ...rest] = stylePane(v.rows, cache.disk, now, v.others, { rows: rowsLeft, columns: width }, top)
     // the header row: title and counts, then the view switch
     const headRow = h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, styled(Box, Text, (header as PaneLine).left), h(Box, { flexDirection: 'row' }, styled(Box, Text, (header as PaneLine).right ?? []), ...(toggle ? [h(Text, null, '  '), toggle] : [])))
-    return h(Box, { flexDirection: 'column', paddingX: 1 }, headRow, ...paneBody(Box, Text, rest)) as RenderElement
+    return h(Box, { flexDirection: 'column', paddingX: 1 }, headRow, ...paneBody(Box, Text, signal), ...paneBody(Box, Text, rest)) as RenderElement
   })
 
   // The person closed the pane (its x, Esc, /walkman pane close): stop keeping its title current.
   on('ui.close', async ($, e, next) => {
-    if ((e as { id?: unknown }).id === PANE_ID) paneOpen = false
+    if ((e as { id?: unknown }).id === PANE_ID) {
+      paneOpen = false
+      syncTicker($)
+    }
     return next(e)
   })
 
