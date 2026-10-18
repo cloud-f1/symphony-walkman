@@ -22,6 +22,7 @@ function stubs(on: any, setup: Setup = {}) {
   const toasts: string[] = []
   const invalidated = { n: 0 }
   const clock: any = mock.clock(on)
+  lastClock = clock
   on('ui.invalidate', () => { invalidated.n++; return { value: undefined } })
   on('ui.toast', (_: any, e: any) => { toasts.push(e.text); return { value: undefined } })
   on('env.get', (_: any, e: any) => ({ value: e.name === 'HOME' ? '/home/u' : setup.env?.[e.name] }))
@@ -74,6 +75,13 @@ function stubs(on: any, setup: Setup = {}) {
 }
 
 const walkman = ($: any, args: string): Promise<{ text: string }> => $.command.run({ command: 'walkman', args })
+// A permission ask shows as needs-you only once it has lasted ASK_GRACE_MS (auto mode settles most asks sooner):
+// raise the check, then let that time pass.
+let lastClock: any
+const asked = async ($: any, input: Record<string, unknown>) => {
+  await $.tool.check(input)
+  await lastClock.advance(2_000)
+}
 const flat = (tree: unknown): string => JSON.stringify(tree)
 
 test('session.start registers /walkman', async ($, on) => {
@@ -321,7 +329,7 @@ test('a permission ask lights the red man until a tool runs', async ($, on) => {
   stubs(on)
   on('tool.check', () => ({ decision: 'ask' }))
   on('tool.call', () => ({ result: {}, text: 'ok' }))
-  await ($ as any).tool.check({ tool: 'Bash', command: 'ls' })
+  await asked($, { tool: 'Bash', command: 'ls' })
   expect((await walkman($, 'board print')).text).toContain('needs you')
   await ($ as any).tool.call({ tool: 'Bash', command: 'ls' })
   expect((await walkman($, 'board print')).text).not.toContain('needs you  ')
@@ -380,7 +388,7 @@ test('pane, a permission ask: an amber needs-you card with its reason, a toast o
   on('tool.check', () => ({ decision: 'ask' }))
   on('tool.call', () => ({ result: {}, text: 'ok' }))
   await walkman($, 'board print') // the first read: nothing waits yet
-  await ($ as any).tool.check({ tool: 'Bash', command: 'ls' })
+  await asked($, { tool: 'Bash', command: 'ls' })
   const j = flat(await paneOf($))
   expect(j).toContain('NEEDS YOU')
   expect(j).toContain('"color":"warning"')
@@ -393,7 +401,7 @@ test('pane, a permission ask: an amber needs-you card with its reason, a toast o
   expect(s.invalidated.n).toBeGreaterThan(waiting) // a card waits: the clock keeps moving
   await ($ as any).tool.call({ tool: 'Bash', command: 'ls' }) // answered
   await paneOf($)
-  await ($ as any).tool.check({ tool: 'Bash', command: 'ls' }) // asks again
+  await asked($, { tool: 'Bash', command: 'ls' }) // asks again
   await paneOf($)
   expect(s.toasts).toEqual(['CF1-195 needs you', 'CF1-195 needs you'])
 })
@@ -554,7 +562,7 @@ test('a worktree the session has left keeps no needs-you: a signal in one worktr
   stubs(on, { porcelain, cwd })
   on('tool.check', () => ({ decision: 'ask' }))
   await $.turn.start({ text: 'go', turnId: 't1' })
-  await ($ as any).tool.check({ tool: 'Bash', command: 'ls' }) // CF1-195 waits for an answer
+  await asked($, { tool: 'Bash', command: 'ls' }) // CF1-195 waits for an answer
   expect((await walkman($, 'debug')).text).toContain('CF1-195:waiting')
   cwd.v = '/r/.claude/worktrees/b' // the session moves on, the ask in a was never answered
   await $.turn.start({ text: 'next', turnId: 't2' })
@@ -585,7 +593,7 @@ test('a TodoWrite list puts done/total on the running card, and an ask names the
   await $.turn.start({ text: 'go', turnId: 't1' })
   await ($ as any).tool.call({ tool: 'TodoWrite', todos: [{ content: 'a', status: 'completed' }, { content: 'b', status: 'in_progress' }, { content: 'c', status: 'pending' }] })
   expect(flat(await paneOf($))).toContain('1/3')
-  await ($ as any).tool.check({ tool: 'Bash', command: 'export TOKEN=hunter2' })
+  await asked($, { tool: 'Bash', command: 'export TOKEN=hunter2' })
   const pane = flat(await paneOf($))
   expect(pane).toContain('Bash is waiting for your approval')
   expect(pane).not.toContain('hunter2')
@@ -676,7 +684,7 @@ test('a card that needs you is a bold box in amber under an amber chip; running 
   on('tool.check', () => ({ decision: 'ask' }))
   await $.turn.start({ text: 'go', turnId: 't1' })
   expect(flat(await paneOf($))).toContain('"borderStyle":"round"')
-  await ($ as any).tool.check({ tool: 'Bash', command: 'ls' })
+  await asked($, { tool: 'Bash', command: 'ls' })
   const pane = flat(await paneOf($))
   expect(pane).toContain('"borderStyle":"bold","borderColor":"warning"')
   expect(pane).toContain('"backgroundColor":"warning"')
@@ -700,7 +708,7 @@ test('the pane title counts the cards that need you, and stops being kept once t
   await walkman($, '')
   expect(titles.at(-1)).toBe('Walkman')
   await $.turn.start({ text: 'go', turnId: 't1' })
-  await ($ as any).tool.check({ tool: 'Bash', command: 'ls' })
+  await asked($, { tool: 'Bash', command: 'ls' })
   await walkman($, 'debug') // a read
   expect(titles.at(-1)).toBe('Walkman · 1')
   void s
@@ -729,7 +737,7 @@ test('a card that needs you stands still in amber: no animation timer, only the 
   on('tool.check', () => ({ decision: 'ask' }))
   await walkman($, '')
   await $.turn.start({ text: 'go', turnId: 't1' })
-  await ($ as any).tool.check({ tool: 'Bash', command: 'ls' })
+  await asked($, { tool: 'Bash', command: 'ls' })
   const pane = flat(await paneOf($))
   expect(pane).toContain('needs you')
   expect(pane).toContain('"borderStyle":"round","borderColor":"warning"')
@@ -841,4 +849,85 @@ test('closing the pane ends the demo', async ($, on) => {
   await walkman($, 'pane close')
   await walkman($, '')
   expect(flat(await paneOf($, { columns: 44, rows: 40 }))).not.toContain(' DEMO ')
+})
+
+// ---------- WALK-197: a card worked on from the repo root ----------
+const ROOT = { v: '/r' } // the session stands at the repo root, not in the card
+
+test('working from the repo root: an edit inside a card worktree lights that card', async ($, on) => {
+  stubs(on, { cwd: ROOT })
+  on('tool.call', () => ({ result: {}, text: 'ok' })) // the tool itself
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  expect((await walkman($, 'debug')).text).toContain('CF1-195:idle') // nothing names the card yet
+  await ($ as any).tool.call({ tool: 'Edit', file_path: '/r/.claude/worktrees/a/core/x.ts', old_string: 'a', new_string: 'b' })
+  expect((await walkman($, 'debug')).text).toContain('CF1-195:walking')
+})
+
+test('working from the repo root: a command that cds into the card lights it; an ask then waits on that card', async ($, on) => {
+  stubs(on, { cwd: ROOT })
+  on('tool.check', () => ({ decision: 'ask' }))
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await asked($, { tool: 'Bash', command: 'cd /r/.claude/worktrees/a && npm test' })
+  const text = (await walkman($, 'debug')).text
+  expect(text).toContain('CF1-195:waiting')
+})
+
+test('a touch goes stale: ten minutes later the card is idle again', async ($, on) => {
+  const s = stubs(on, { cwd: ROOT })
+  on('tool.call', () => ({ result: {}, text: 'ok' })) // the tool itself
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await ($ as any).tool.call({ tool: 'Read', file_path: '/r/.claude/worktrees/a/README.md' })
+  expect((await walkman($, 'debug')).text).toContain('CF1-195:walking')
+  await s.clock.advance(11 * 60_000)
+  expect((await walkman($, 'debug')).text).toContain('CF1-195:idle')
+})
+
+test('a session standing in a card keeps its own card, whatever paths its tools name', async ($, on) => {
+  stubs(on, { porcelain: PORCELAIN + '\nworktree /r/.claude/worktrees/b\nHEAD 123\nbranch refs/heads/CF1-200-other\n' })
+  on('tool.call', () => ({ result: {}, text: 'ok' })) // the tool itself
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await ($ as any).tool.call({ tool: 'Read', file_path: '/r/.claude/worktrees/b/x.ts' })
+  const text = (await walkman($, 'debug')).text
+  expect(text).toContain('CF1-195:walking')
+  expect(text).toContain('CF1-200:idle')
+})
+
+test('the pane lists an idle card instead of hiding it', async ($, on) => {
+  stubs(on)
+  await walkman($, '')
+  const pane = flat(await paneOf($, { columns: 44, rows: 40 }))
+  expect(pane).toContain('all quiet')
+  expect(pane).toContain('○ CF1-195')
+})
+
+// ---------- 0.15.0: an answered ask clears (the prompt runs inside tool.call) ----------
+test('an ask that is answered clears when the tool returns: the card runs again', async ($, on) => {
+  const s = stubs(on)
+  on('tool.check', () => ({ decision: 'ask' }))
+  // core: the permission prompt and the tool run beneath tool.call; the person takes three seconds to answer
+  on('tool.call', async () => {
+    await ($ as any).tool.check({ tool: 'Bash', command: 'npm test' })
+    await s.clock.advance(3_000)
+    return { result: {}, text: 'ok' }
+  })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await ($ as any).tool.call({ tool: 'Bash', command: 'npm test' })
+  expect((await walkman($, 'debug')).text).toContain('CF1-195:walking')
+})
+
+test('an ask auto mode settles at once never shows as needs-you and sends no toast', async ($, on) => {
+  const s = stubs(on)
+  on('tool.check', () => ({ decision: 'ask' }))
+  on('tool.call', async () => {
+    await ($ as any).tool.check({ tool: 'Read', file_path: '/x' })
+    return { result: {}, text: 'ok' } // settled and run within the grace
+  })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await walkman($, 'debug') // a first read, so a later toast would count
+  await ($ as any).tool.call({ tool: 'Read', file_path: '/x' })
+  await s.clock.advance(5_000)
+  const text = (await walkman($, 'debug')).text
+  expect(text).toContain('CF1-195:walking')
+  expect(text).not.toContain('askPending":true')
+  expect(s.toasts).toEqual([])
 })

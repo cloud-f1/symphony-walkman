@@ -136,9 +136,12 @@ test('the disk meter is solid blocks like the status line (█ fill, ░ track i
   assert.equal(tone(95), 'error')
 })
 
-test('pane, all idle: the title, the disk meter on top (htop style), a rule, "all quiet", no lane at all', () => {
-  const t = paneText(stylePane([row({ light: 'idle' }), row({ key: 'CF1-2', light: 'idle' })], { freeGb: 40, usedPct: 23 }, NOW))
-  assert.equal(t.length, 4, t.join('\n'))
+test('pane, all idle: the title, the disk meter on top (htop style), a rule, "all quiet", then the idle cards', () => {
+  const t = paneText(stylePane([row({ light: 'idle' }), row({ key: 'CF1-2', light: 'idle', title: 'Second card', jiraStatus: 'In Progress' })], { freeGb: 40, usedPct: 23 }, NOW))
+  assert.equal(t.length, 6, t.join('\n'))
+  // an idle card is listed, not hidden: a card In Progress in Jira with nobody in it must still show (WALK-197)
+  assert.ok(t[4]?.includes('○ CF1-195'), t.join('\n'))
+  assert.ok(t[5]?.includes('○ CF1-2') && t[5]?.includes('Second card') && t[5]?.includes('In Progress'), t.join('\n'))
   assert.ok(t[0]?.startsWith('WALKMAN'))
   assert.ok(t[1]?.includes('23%') && t[1]?.includes('40 GB free'))
   assert.ok(/^─+$/.test(t[2] ?? ''))
@@ -219,9 +222,9 @@ test('pane with no card branch says so instead of "all quiet"', () => {
 test('pane: "+N more" counts cards, not the done/idle summary line', () => {
   const rows = [...Array.from({ length: 6 }, (_, i) => row({ key: `R-${i}`, title: `card ${i}`, light: 'walking', sinceMs: at(i + 1) })), row({ key: 'D-1', light: 'done' }), row({ key: 'D-2', light: 'idle' })]
   const t = paneText(stylePane(rows, { freeGb: 9, usedPct: 50 }, NOW, [], { rows: 7 }))
-  const shown = t.filter((l) => /R-\d/.test(l)).length
+  const shown = t.filter((l) => /R-\d|D-2/.test(l)).length
   const more = Number(/\+(\d+) more/.exec(t.join('\n'))?.[1] ?? 0)
-  assert.equal(shown + more, 6, t.join('\n'))
+  assert.equal(shown + more, 7, t.join('\n')) // six running and one idle card; the done line is a summary
 })
 
 test('pane: a running card of a symphony run shows its five-step bar, still inside the pane', () => {
