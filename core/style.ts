@@ -218,12 +218,14 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
   })
   if (quiet) {
     items.push({ lines: [{ left: rows.length === 0 ? [{ text: 'no card branch · work in a KEY-n-slug branch', tone: 'subtle' }] : [{ text: '✓ ', tone: 'success' }, { text: 'all quiet', tone: 'subtle' }] }] })
-  } else if (count('done') + count('idle') > 0) {
-    const parts: Seg[] = []
-    if (count('done') > 0) parts.push({ text: `✓ ${count('done')} done`, tone: 'subtle' })
-    if (count('done') > 0 && count('idle') > 0) parts.push({ text: ' · ', tone: 'subtle' })
-    if (count('idle') > 0) parts.push({ text: `○ ${count('idle')} idle`, tone: 'subtle' })
-    items.push({ lines: [{ left: parts }] })
+  } else if (count('done') > 0) {
+    items.push({ lines: [{ left: [{ text: `✓ ${count('done')} done`, tone: 'subtle' }] }] })
+  }
+  // idle cards, one line each with their Jira status: a card In Progress with nobody in it must not vanish (WALK-197)
+  for (const r of rows.filter((x) => x.light === 'idle').sort((x, y) => x.key.localeCompare(y.key))) {
+    const status = r.jiraStatus ? plainText(r.jiraStatus) : ''
+    const room = Math.max(6, width - 2 - r.key.length - 2 - (status ? cells(status) + 1 : 0))
+    items.push({ lines: [{ left: [{ text: SYMBOL.idle + ' ' + r.key, tone: 'subtle', bold: true }, { text: '  ' + clipCells(title(r), room), tone: 'subtle' }], ...(status ? { right: [{ text: status, tone: 'subtle' as const }] } : {}) }], counted: true })
   }
   others.slice(0, OTHERS_MAX).forEach((i, n) => {
     const line: PaneLine = { left: [{ text: '  ' + i.key, bold: true }, { text: '  ' + clipCells(plainText(i.summary), Math.max(6, width - 2 - i.key.length - 2)), tone: 'subtle' }] }

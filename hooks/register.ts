@@ -18,6 +18,7 @@ import { signalSvg } from '../core/svg.ts'
 import { FRAME_MS, SIGNAL_ROWS, leadOf, signalLines, signalPace } from '../core/signal.ts'
 import { playground } from '../core/track.ts'
 import { SCENES, demoRows } from '../core/demo.ts'
+import { touchedWorktree } from '../core/touch.ts'
 import { isRecordName, otherSessionLights, parsePs, parseRecord, parseTasklist } from '../core/sessions.ts'
 import type { SessionRecord } from '../core/sessions.ts'
 import { CARD_CELLS, boardGrid } from '../core/boardgrid.ts'
@@ -445,6 +446,29 @@ async function subagents($: Engine, now: number): Promise<AgentRow[]> {
   return rows.sort((a, b) => b.sinceMs - a.sinceMs)
 }
 let currentTree = '' // the worktree this session works in, from the last mark()
+// The card worktree this session's tool calls last named (WALK-197): a session started at the repo root works in a
+// card without ever standing in it. While the session is not in a card itself, its signals light this card.
+let touched: { path: string; at: number } | undefined
+const TOUCH_MS = 10 * 60_000
+const ASK_GRACE_MS = 2_000 // an ask auto mode settles within this never shows as needs-you
+let askTimer: { cancel: () => void } | undefined
+async function noteTouch($: Engine, e: unknown): Promise<void> {
+  if (cache.rows.length === 0) await refresh($) // before the first read nothing could match
+  const path = touchedWorktree(e as Record<string, unknown>, cache.rows.map((r) => r.worktree))
+  if (path === undefined) return
+  const now = await $.clock.now()
+  const changed = touched?.path !== path
+  touched = { path, at: now }
+  if (changed) {
+    note(`touch ${path}`)
+    cache.at = -Infinity // a card lights up: reread on the next draw
+    try {
+      $.ui.invalidate('ui.render')
+    } catch {
+      // a redraw is a courtesy
+    }
+  }
+}
 
 async function load($: Engine, now: number): Promise<void> {
   const out = await listWorktrees($)
@@ -454,10 +478,15 @@ async function load($: Engine, now: number): Promise<void> {
   }
   cache.at = now
   const rows: CardRow[] = []
-  for (const wt of parseWorktrees(out)) {
+  const trees = parseWorktrees(out)
+  // the session's own signals, lent to the card its tool calls work in when the session stands in no card itself
+  const inCard = trees.some((wt) => wt.path === currentTree && cardFromBranch(wt.branch, wt.path) !== undefined)
+  const lent = !inCard && touched !== undefined && now - touched.at < TOUCH_MS && now >= touched.at ? touched.path : undefined
+  const signalOf = (path: string): Live | undefined => live.get(path) ?? (path === lent ? live.get(currentTree) : undefined)
+  for (const wt of trees) {
     const card = cardFromBranch(wt.branch, wt.path)
     if (!card) continue
-    const sig = live.get(wt.path)
+    const sig = signalOf(wt.path)
     const runState = await readRunState($, card.key)
     const light = deriveLight({ isWorking: sig?.isWorking ?? false, askPending: sig?.askPending ?? false, lastTurnFailed: sig?.lastTurnFailed ?? false, runState })
     const seenKey = `${wt.path}|${light}`
@@ -467,7 +496,7 @@ async function load($: Engine, now: number): Promise<void> {
   // other sessions light the cards this session is not working on (its own signals are finer)
   const others = await otherSessions($, rows.map((r) => r.worktree))
   for (const r of rows) {
-    const sig = live.get(r.worktree)
+    const sig = signalOf(r.worktree)
     const mine = sig && (sig.isWorking || sig.askPending || sig.lastTurnFailed)
     const other = others.get(r.worktree)
     if (!mine && other && r.light !== 'failed') {
@@ -476,7 +505,7 @@ async function load($: Engine, now: number): Promise<void> {
     }
   }
   const agents = await subagents($, now)
-  const home = rows.find((r) => r.worktree === currentTree)
+  const home = rows.find((r) => r.worktree === currentTree) ?? rows.find((r) => r.worktree === lent)
   if (home && agents.length > 0) home.agents = agents
   for (const k of [...seen.keys()]) if (!rows.some((r) => k === `${r.worktree}|${r.light}`)) seen.delete(k)
   cache.rows = rows
@@ -596,29 +625,46 @@ export function register(on: On, options?: PluginOptions) {
 
   // A permission ask is the red man: the engine's verdict is 'ask' until the person answers.
   on('tool.check', async ($, e, next) => {
+    await noteTouch($, e)
     const verdict = await next(e)
     note(`tool.check verdict=${JSON.stringify((verdict as { decision?: unknown }).decision)}`)
-    // the reason names the tool only (its input can hold a secret): "Bash is waiting for your approval"
-    if ((verdict as { decision?: unknown }).decision === 'ask') await mark($, { askPending: true, why: `${toolName(e)} is waiting for your approval` })
+    // the reason names the tool only (its input can hold a secret): "Bash is waiting for your approval".
+    // tool.check runs before the permission mode settles the ask (auto mode often approves it at once), so the card
+    // waits ASK_GRACE_MS before it says it needs you; the tool finishing first means nobody was asked.
+    if ((verdict as { decision?: unknown }).decision === 'ask') {
+      const why = `${toolName(e)} is waiting for your approval`
+      askTimer?.cancel()
+      try {
+        askTimer = $.clock.after(ASK_GRACE_MS, () => {
+          askTimer = undefined
+          void mark($, { askPending: true, why })
+        })
+      } catch {
+        await mark($, { askPending: true, why }) // no timer here: say it at once
+      }
+    }
     return verdict
   })
 
   on('tool.call', async ($, e, next) => {
-    // a call running means the ask was answered; with no ask pending there is nothing to clear, and
-    // marking would spawn git and force a full reread for every tool call
-    if ([...live.values()].some((v) => v.askPending)) await mark($, { askPending: false, why: undefined })
+    await noteTouch($, e)
     const name = toolName(e)
     if (name === 'TodoWrite') {
       const todos = (e as { todos?: unknown }).todos
       if (Array.isArray(todos)) await mark($, { todo: { done: todos.filter((t) => (t as { status?: unknown })?.status === 'completed').length, total: todos.length } }, true)
     }
-    if (name !== 'AskUserQuestion') return next(e)
     // a question to the person waits like a permission ask, until it is answered
-    await mark($, { askPending: true, why: 'a question is waiting for your answer' })
+    const question = name === 'AskUserQuestion'
+    if (question) await mark($, { askPending: true, why: 'a question is waiting for your answer' })
     try {
       return await next(e)
     } finally {
-      await mark($, { askPending: false, why: undefined })
+      // The permission prompt and the tool both run inside next(e): only when it returns is an ask answered. Clearing
+      // on the way in (as before 0.15.0) ran before the ask existed, so a card said "needs you" until the turn ended.
+      askTimer?.cancel()
+      askTimer = undefined
+      // with no ask pending there is nothing to clear, and marking would spawn git for every tool call
+      if (question || [...live.values()].some((v) => v.askPending)) await mark($, { askPending: false, why: undefined })
     }
   })
 

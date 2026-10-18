@@ -1,4 +1,4 @@
-# Handover (state at v0.14.0, refreshed 2026-10-18)
+# Handover (state at v0.15.0, refreshed 2026-10-18)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.14.0` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.15.0` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -141,4 +141,6 @@ Docker was removed so nothing remains there.
 - Green man look and block meters (v0.12.1, WALK-184, owner feedback with a photo of a Taipei crossing and the status line): the figure is a side view (10 x 14 pixels -> 10 x 7 cells, `WALK_A` stride, `WALK_B` passing, `STAND`), with `bigDigits` (3 x 5 font, amber) beside it as the countdown. Meters are back to blocks like the status line: `█` fill and `░` track in the same tone. Do not use `dimColor` for a coloured track: the engine draws it grey, and an empty meter then looks full.
 - Playground (v0.13.0, WALK-188, a user's idea: many cards, many people running laps): `core/track.ts` draws an oval track in the pane's free rows (`scroll.bodyRows`, not `viewport.rows`, which is the terminal's) with one braille runner (4 x 4 px in two cells) per running, waiting or failed card; places come from the clock (`runnerOf`), colours from `trackTones` (card0..card5 -> claude, ide, planMode, merged, suggestion, bashBorder: the theme keys that draw distinct colours; suggestion/permission/remember and merged/autoAccept draw alike). The ticker runs at 250 ms whenever any card walks and the cards view is open.
 - Demo mode (v0.14.0, WALK-193): `core/demo.ts` holds seven scenes, each a function of (began, now) that returns made-up `DEMO-n` rows; `demo` (0 off, 1..7) and `demoBegan` live in register.ts. In a scene the cards view uses the demo rows for the signal, the list and the playground and leaves out the Jira line and lane; toasts and the title count still read `cache.rows`, so a demo never fires them. The `d` Button sits on its own row (the header is full). The ticker counts an open scene past Dawn as active. Use it to check animation changes: `/walkman demo`, then `d`.
+- Cards worked from the repo root (v0.15.0, WALK-197): `core/touch.ts` `touchedWorktree` finds the card worktree a tool call names (`file_path`, `notebook_path`, `path`, a path in `command`; a prefix is no match; the longest wins). `noteTouch` runs in `tool.check` and `tool.call`; in `load`, when `currentTree` is not a card, `signalOf` lends `live.get(currentTree)` to the touched card for `TOUCH_MS` (10 min). Idle cards are listed in the pane with their Jira status.
+- Asks (v0.15.0): the engine runs `tool.call` -> `tool.check` -> the mode settles the ask (auto mode often approves at once) -> the prompt -> the tool, all inside `tool.call`'s `next(e)`. So an ask is marked only after `ASK_GRACE_MS` (2 s, `$.clock.after`) and cleared in `tool.call`'s `finally`. Up to 0.14.0 it was cleared on the way in, before it existed, and stuck until the turn ended. Tests raise asks through the `asked()` helper, which waits out the grace.
 - Process (2026-10-18): open cards with `symphony-workflow start KEY` (In Progress, `.worktrees/`), PRs with `pr KEY` (In Review), close with `land KEY` (Done). Up to WALK-184 cards were made by hand and jumped Backlog -> Done, so the board never showed work in progress.
