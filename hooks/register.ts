@@ -71,7 +71,8 @@ const textProps = (seg: Seg): Record<string, unknown> => ({
   ...(seg.tone === 'subtle' ? { dimColor: true } : { color: THEME[seg.tone ?? 'text'] }),
   ...(seg.bg ? { backgroundColor: THEME[seg.bg] } : {}),
   bold: seg.bold === true,
-  wrap: 'truncate-end',
+  // a rule is cut at the edge with no ellipsis: Desktop's wider cells overflowed it into "…" (WALK-202)
+  wrap: /^─+$/.test(seg.text) ? 'truncate' : 'truncate-end',
 })
 
 // One styled line as a row of Text pieces. Wrapping is off so a narrow pane never splits a card.
@@ -699,9 +700,11 @@ export function register(on: On, options?: PluginOptions) {
     if (sub === 'demo') {
       demo = 1
       demoBegan = -1
+      // On Desktop ui.open can fail with no-surface while the pane is already showing: keep the demo on either way
       if (await openPane('cards')) return { text: `Demo: ${SCENES.length} scenes of made-up cards. d shows the next one; after the last, d returns to your cards.` }
-      demo = 0
-      return { text: 'Demo needs the pane, and there is no room for it here.' }
+      paneOpen = true
+      syncTicker($)
+      return { text: `Demo is on in the Walkman pane: press D there for the next of ${SCENES.length} scenes. Not showing? Open it with /walkman.` }
     }
     if (sub && sub !== 'board' && sub !== 'pane') return { text: ['Walkman: unknown option "' + sub + '"', HELP].join('\n') }
     if (sub === 'pane' && arg === 'close') {
@@ -795,7 +798,19 @@ export function register(on: On, options?: PluginOptions) {
     const demoRow = demo > 0 ? h(Box, { flexDirection: 'row' }, styled(Box, Text, [{ text: ` DEMO ${demo}/${SCENES.length} · ${SCENES[demo - 1]?.name ?? ''} `, tone: 'inverse', bg: 'card1', bold: true }]), ...(demoButton ? [h(Text, null, '  '), demoButton] : [])) : undefined
     const keyRow = demo === 0 && demoButton ? demoButton : undefined
     // the pedestrian signal sits under the title (WALK-179); the cards below get the rows it leaves
-    const signal = signalLines(leadOf(v.rows), now, width)
+    const lead = leadOf(v.rows)
+    const signal = signalLines(lead, now, width)
+    // On Desktop the half blocks break apart (its rows have gaps), so the box draws the animated SVG walker of
+    // core/svg.ts beside the card's words instead (WALK-202); the terminal keeps the half-block figure.
+    const Svg = e.surface === 'desktop' ? (elements['Svg'] as ((props: object) => unknown) | undefined) : undefined
+    const signalBox = Svg
+      ? h(
+          Box,
+          { flexDirection: 'row', borderStyle: 'round', borderColor: THEME[signal[0]?.box?.tone ?? 'subtle'], gap: 2, paddingX: 1 },
+          Svg({ source: signalSvg(lead?.light ?? 'idle', lead ? Math.floor((now - lead.sinceMs) / 1000) : 0), alt: lead ? `${lead.key} is ${lead.light}` : 'nothing is crossing', width: 120, height: 64, isInteractive: true }),
+          h(Box, { flexDirection: 'column' }, ...signal.map((l) => l.left.slice(2)).filter((segs) => segs.length > 0 && !segs.some((x) => /[▀▄█]/.test(x.text))).map((segs) => styled(Box, Text, segs))),
+        )
+      : undefined
     // the pane's own rows (viewport is the terminal's: using it drew the playground past the pane's bottom edge)
     const paneRows = (e.props as { scroll?: { bodyRows?: number } }).scroll?.bodyRows ?? e.viewport?.rows
     const rowsLeft = paneRows === undefined ? undefined : Math.max(4, paneRows - SIGNAL_ROWS - 2 - 1) // the demo or key row
@@ -807,7 +822,7 @@ export function register(on: On, options?: PluginOptions) {
     const used = 1 + 1 + SIGNAL_ROWS + 2 + rest.length + 2 * boxes // title, the demo or key row, the signal box
     const free = paneRows === undefined ? 0 : paneRows - used - 1
     const track = playground(v.rows, now, width - 2, Math.min(14, free))
-    return h(Box, { flexDirection: 'column', paddingX: 1 }, headRow, ...(demoRow ? [demoRow] : []), ...paneBody(Box, Text, signal), ...paneBody(Box, Text, rest), ...(track.length > 0 ? [h(Text, null, ' '), ...paneBody(Box, Text, track)] : []), ...(keyRow ? [keyRow] : [])) as RenderElement
+    return h(Box, { flexDirection: 'column', paddingX: 1 }, headRow, ...(demoRow ? [demoRow] : []), ...(signalBox ? [signalBox] : paneBody(Box, Text, signal)), ...paneBody(Box, Text, rest), ...(track.length > 0 ? [h(Text, null, ' '), ...paneBody(Box, Text, track)] : []), ...(keyRow ? [keyRow] : [])) as RenderElement
   })
 
   // The person closed the pane (its x, Esc, /walkman pane close): stop keeping its title current.
