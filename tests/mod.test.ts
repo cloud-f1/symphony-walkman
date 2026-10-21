@@ -58,7 +58,7 @@ function stubs(on: any, setup: Setup = {}) {
   })
   on('agent.list', () => ({ value: setup.agents ?? [] }))
   on('session.id', () => ({ value: 'me' }))
-  on('ui.open', (_: any, e: any) => { panes.push('open:' + e.id); titles.push(e.title); return { value: { isPlaced: true } } })
+  on('ui.open', (_: any, e: any) => { if (setup.openFails) throw new Error('no-surface: no surface is attached'); panes.push('open:' + e.id); titles.push(e.title); return { value: { isPlaced: true } } })
   on('ui.close', (_: any, e: any) => { panes.push('close:' + e.id); return { value: undefined } })
   on('ui.resolve', () => ({
     Box: ({ children, ...props }: any) => ({ type: 'Box', props, children }),
@@ -930,4 +930,36 @@ test('an ask auto mode settles at once never shows as needs-you and sends no toa
   expect(text).toContain('CF1-195:walking')
   expect(text).not.toContain('askPending":true')
   expect(s.toasts).toEqual([])
+})
+
+// ---------- WALK-202: Claude Desktop ----------
+const deskPane = ($: any) => ($ as any).ui.render({ surface: 'desktop', component: 'Pane', requestId: 'walkman-pane', props: {}, viewport: { columns: 60, rows: 40 } })
+
+test('on Desktop the pane signal is the animated SVG walker, not half blocks; the terminal keeps the half blocks', async ($, on) => {
+  stubs(on)
+  await walkman($, '')
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const desk = flat(await deskPane($))
+  expect(desk).toContain('"type":"Svg"')
+  expect(desk).toContain('"isInteractive":true')
+  expect(desk).toContain('animateTransform') // the walker's legs swing
+  expect(desk).toContain('CF1-195')
+  expect(desk).not.toMatch(/[▀▄]/) // no half-block figure or digits on Desktop
+  const term = flat(await paneOf($))
+  expect(term).not.toContain('"type":"Svg"')
+  expect(term).toMatch(/[▀▄]/)
+})
+
+test('/walkman demo turns the demo on even when the pane cannot be opened from here', async ($, on) => {
+  stubs(on, { openFails: true })
+  const text = (await walkman($, 'demo')).text
+  expect(text).toContain('D')
+  expect(text).not.toContain('no room')
+  expect(flat(await paneOf($, { columns: 44, rows: 40 }))).toContain(' DEMO 1/7 · Dawn ')
+})
+
+test('the rule under the meters is cut at the edge without an ellipsis', async ($, on) => {
+  stubs(on)
+  const pane = flat(await paneOf($))
+  expect(pane).toMatch(/"wrap":"truncate"\},"children":\["─+"\]/)
 })
