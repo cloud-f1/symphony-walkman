@@ -42,7 +42,7 @@ test('a card that needs you stands still with a warning mark, a failed one lies 
 test('cards on one track get different colours; at most eight figures, the rest as +N', () => {
   const svg = playgroundSvg(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6'].map((k) => row(k)), 0) as string
   const used = new Set(CARD_HEX.filter((c) => svg.includes(c)))
-  assert.equal(used.size, 6)
+  assert.equal(used.size, 6) // six cards, six colours
   const many = playgroundSvg(Array.from({ length: 11 }, (_, i) => row(`A-${i + 1}`)), 0) as string
   assert.equal((many.match(/<animateMotion/g) ?? []).length, 8)
   assert.ok(many.includes('+3'))
@@ -51,4 +51,12 @@ test('cards on one track get different colours; at most eight figures, the rest 
 test('text in the markup is escaped', () => {
   const svg = playgroundSvg([row('A-1<x>')], 0) as string
   assert.ok(!svg.includes('A-1<x>'))
+})
+
+test('eight runners, eight different colours, none of them a status colour', () => {
+  const svg = playgroundSvg(Array.from({ length: 8 }, (_, i) => row(`B-${i + 1}`)), 0) as string
+  assert.equal(CARD_HEX.length, 8)
+  assert.equal(new Set(CARD_HEX).size, 8)
+  assert.equal(CARD_HEX.filter((c) => svg.includes(c)).length, 8)
+  for (const c of CARD_HEX) assert.ok(!['#22c55e', '#f59e0b', '#ef4444', '#e5484d', '#d99a06'].includes(c))
 })

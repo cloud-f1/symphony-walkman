@@ -1,5 +1,5 @@
 import type { CardRow, Light } from './contracts.ts'
-import { CARD_TONES, MAX_RUNNERS, keyHash, trackTones } from './track.ts'
+import { MAX_RUNNERS, keyHash } from './track.ts'
 
 // The playground for Claude Desktop (WALK-212): the text track falls apart there (its rows have gaps and it cuts
 // rows with an ellipsis), so Desktop gets an SVG stadium where each running card's figure laps with SMIL
@@ -7,7 +7,23 @@ import { CARD_TONES, MAX_RUNNERS, keyHash, trackTones } from './track.ts'
 // so the animation runs on instead of restarting.
 
 // One colour per card tone (card0..card5), dark enough for Desktop's light theme and its dark one.
-export const CARD_HEX = ['#d77757', '#4782c8', '#2f8f86', '#8a5cf5', '#6f7bd8', '#e0479e'] as const
+// Eight colours, one per runner the track can hold, dark enough for Desktop's light theme and its dark one; none of
+// them the status green, amber or red (WALK-217: six repeated, DEMO-13 and DEMO-16 were both pink).
+export const CARD_HEX = ['#d77757', '#3b6fd8', '#2f8f86', '#8a5cf5', '#e0479e', '#8b5a2b', '#1aa3c8', '#7f8c1d'] as const
+
+// Each card on the track its own colour: the one its key picks, or the next free one (stable for a set of cards).
+function svgColours(keys: readonly string[]): Map<string, string> {
+  const out = new Map<string, string>()
+  const taken = new Set<number>()
+  for (const key of [...keys].sort()) {
+    let i = keyHash(key) % CARD_HEX.length
+    for (let n = 0; n < CARD_HEX.length && taken.has(i); n++) i = (i + 1) % CARD_HEX.length
+    out.set(key, CARD_HEX[i] as string)
+    taken.add(i)
+    if (taken.size === CARD_HEX.length) taken.clear()
+  }
+  return out
+}
 const AMBER = '#d99a06'
 const RED = '#e5484d'
 const RIM = '#9ca3af'
@@ -54,8 +70,8 @@ export function playgroundSvg(rows: readonly CardRow[], _now: number): string | 
   const racing = rows.filter((r) => r.light === 'walking' || r.light === 'waiting' || r.light === 'failed').sort((a, b) => a.key.localeCompare(b.key))
   if (racing.length === 0) return undefined
   const shown = racing.slice(0, MAX_RUNNERS)
-  const tones = trackTones(shown.map((r) => r.key))
-  const colorOf = (key: string) => CARD_HEX[CARD_TONES.indexOf(tones.get(key) ?? 'card0')] ?? CARD_HEX[0]
+  const colours = svgColours(shown.map((r) => r.key))
+  const colorOf = (key: string) => colours.get(key) ?? CARD_HEX[0]
   const parts: string[] = []
   for (const r of shown) {
     const h = keyHash(r.key)
