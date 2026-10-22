@@ -1,4 +1,4 @@
-# Handover (state at v0.16.0, refreshed 2026-10-22)
+# Handover (state at v0.16.1, refreshed 2026-10-22)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.16.0` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.16.1` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -147,4 +147,5 @@ Docker was removed so nothing remains there.
 - Desktop follow-ups (v0.15.2, WALK-207): `signalNumber` is the one countdown (steps left while a TodoWrite list runs, else minutes) for the terminal digits and both Desktop SVGs. Desktop ignores `wrap: 'truncate'` (it ellipsizes), so the rule is left out there. Desktop gives no `scroll.bodyRows` or `viewport.rows`, so the pane assumes 40 rows there for the playground.
 - Epic WALK-1 closed 2026-10-22; new work goes under Epic WALK-211 (WALK-E2: Walkman on Claude Desktop and polish).
 - Desktop playground (v0.16.0, WALK-212): text art falls apart on Desktop, so `core/tracksvg.ts` `playgroundSvg` draws an SVG stadium whose figures lap with `animateMotion` (duration from the card's pace, begin offset from its key). The markup holds no clock, so redraws give the same SVG and the animation is not restarted. Colours are `CARD_HEX` (card0..card5, readable on light and dark). `SUBCOMMANDS` in core/style.ts feeds the `/walkman` argument hint; a check keeps it equal to HELP.
+- One look (v0.16.1, WALK-217, Epic WALK-216 'WALK-E3'): `core/svg.ts` draws the side-view walker and standing man (data-figure markers for the checks); needs-you is amber on Desktop too. `core/tracksvg.ts` has eight `CARD_HEX` colours with its own free-colour assignment.
 - Process (2026-10-18): open cards with `symphony-workflow start KEY` (In Progress, `.worktrees/`), PRs with `pr KEY` (In Review), close with `land KEY` (Done). Up to WALK-184 cards were made by hand and jumped Backlog -> Done, so the board never showed work in progress.

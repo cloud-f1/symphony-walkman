@@ -72,9 +72,22 @@ test('board shows disk and an empty-state hint', () => {
 test('svg: color per light, clamped countdown, nothing else injectable', () => {
   assert.match(signalSvg('walking', 7), />07</)
   assert.match(signalSvg('walking', 7), /#22c55e/)
-  assert.match(signalSvg('waiting', 7), /#ef4444/)
+  assert.match(signalSvg('waiting', 7), /#f59e0b/) // amber like the terminal: needs you and failed never share a colour
+  assert.match(signalSvg('failed', 7), /#ef4444/)
   assert.match(signalSvg('failed', 7), /<animate attributeName="opacity"/)
   assert.match(signalSvg('walking', 5000), />99</)
   assert.match(signalSvg('walking', NaN), />00</)
   assert.ok(!signalSvg('walking', 3).includes('<script'))
+})
+
+test('svg: the Taiwan man in side view, like the terminal: head forward, a leaning body, swinging limbs; standing upright', () => {
+  const walk = signalSvg('walking', 3)
+  assert.match(walk, /data-figure="side-walk"/)
+  assert.ok((walk.match(/<animateTransform/g) ?? []).length >= 4, 'two legs and two arms swing')
+  const head = /<circle cx="(-?[\d.]+)" cy="(-?[\d.]+)"/.exec(walk)
+  const hip = /data-hip="(-?[\d.]+)"/.exec(walk)
+  assert.ok(Number(head?.[1]) > Number(hip?.[1]), 'the head is ahead of the hips: a forward lean')
+  const stand = signalSvg('idle', 0)
+  assert.match(stand, /data-figure="side-stand"/)
+  assert.ok(!stand.includes('animateTransform'))
 })
