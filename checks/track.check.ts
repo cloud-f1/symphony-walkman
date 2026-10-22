@@ -1,20 +1,21 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { CARD_TONES, MAX_RUNNERS, TRACK_MIN_ROWS, braille, cardTone, lapLength, playground, runnerOf, trackTones } from '../core/track.ts'
+import { CARD_TONES, MAX_RUNNERS, TRACK_MIN_ROWS, cardTone, lapLength, playground, runnerOf, trackTones } from '../core/track.ts'
 import { cells, plain } from '../core/style.ts'
 import type { CardRow } from '../core/contracts.ts'
 
 const row = (key: string, over: Partial<CardRow> = {}): CardRow => ({ key, slug: 'x', branch: key + '-x', worktree: '/w/' + key, light: 'walking', sinceMs: 0, ...over })
 const text = (lines: ReturnType<typeof playground>) => lines.map((l) => plain(l.left))
 
-test('braille: two 2 x 4 pixel cells per runner', () => {
-  assert.equal(braille(['#...', '....', '....', '....']), '⠁⠀')
-  assert.equal(braille(['....', '....', '....', '...#']), '⠀⢀')
-  assert.equal(braille(['####', '####', '####', '####']), '⣿⣿')
+test('a runner is a 3 x 2 half-block figure: big enough to see in a real terminal (braille dots were not)', () => {
+  const g = runnerOf(row('A-1'), 0, 44, 12).glyph
+  assert.equal(g.length, 2)
+  assert.ok(g.every((l) => [...l].length === 3))
+  assert.ok(g.join('').match(/[▀▄█]/g)!.length >= 3)
 })
 
 test('nothing running: no playground at all', () => {
-  assert.deepEqual(playground([], 0, 44, 10), [])
+  assert.deepEqual(playground([], 0, 44, 12), [])
   assert.deepEqual(playground([row('A-1', { light: 'idle' }), row('A-2', { light: 'done' })], 0, 44, 10), [])
 })
 
@@ -24,14 +25,15 @@ test('too few rows or columns: no playground', () => {
   assert.equal(playground([row('A-1')], 0, 44, TRACK_MIN_ROWS).length, TRACK_MIN_ROWS)
 })
 
-test('an oval track: rounded ends, every row exactly the width asked', () => {
-  const t = text(playground([row('A-1')], 0, 40, 9))
-  assert.equal(t.length, 9)
+test('an oval track: rounded top and bottom, slanted corners, every row exactly the width asked', () => {
+  const t = text(playground([row('A-1')], 0, 40, 12))
+  assert.equal(t.length, 12)
   for (const l of t) assert.equal(cells(l), 40, JSON.stringify(l))
   assert.ok(t[0]?.includes('╭') && t[0]?.includes('╮'))
-  assert.ok(t[1]?.startsWith('╱') && t[1]?.endsWith('╲'))
-  assert.ok(t[7]?.startsWith('╲') && t[7]?.endsWith('╱'))
-  assert.ok(t[8]?.includes('╰') && t[8]?.includes('╯'))
+  assert.ok(t[1]?.trim().startsWith('╱') && t[1]?.trim().endsWith('╲'))
+  assert.ok(t[10]?.trim().startsWith('╲') && t[10]?.trim().endsWith('╱'))
+  assert.ok(t[11]?.includes('╰') && t[11]?.includes('╯'))
+  assert.equal(TRACK_MIN_ROWS, 10)
 })
 
 test('a runner laps: its place moves with the clock and comes back after a lap', () => {
@@ -66,30 +68,30 @@ test('a card keeps its colour and its figure; colours never borrow the status co
 test('a card that needs you stands still where it stopped; a failed one lies down', () => {
   const waiting = row('A-1', { light: 'waiting', sinceMs: 2000 })
   assert.equal(runnerOf(waiting, 3000, 40, 9).pos, runnerOf(waiting, 9000, 40, 9).pos)
-  assert.equal(runnerOf(waiting, 3000, 40, 9).glyph, runnerOf(waiting, 9000, 40, 9).glyph)
+  assert.deepEqual(runnerOf(waiting, 3000, 40, 9).glyph, runnerOf(waiting, 9000, 40, 9).glyph)
   const failed = runnerOf(row('A-1', { light: 'failed' }), 0, 40, 9).glyph
-  assert.notEqual(failed, runnerOf(waiting, 3000, 40, 9).glyph)
+  assert.notDeepEqual(failed, runnerOf(waiting, 3000, 40, 9).glyph)
   // a walking runner changes its legs between two frames
   const walking = row('A-1')
-  assert.notEqual(runnerOf(walking, 0, 40, 9).glyph, runnerOf(walking, 250, 40, 9).glyph)
+  assert.notDeepEqual(runnerOf(walking, 0, 40, 9).glyph, runnerOf(walking, 250, 40, 9).glyph)
 })
 
 test('the runners are drawn on the track in their colours; the infield shows their keys as name tags', () => {
-  const lines = playground([row('WALK-12'), row('WALK-15', { light: 'waiting' }), row('WALK-20', { light: 'failed' })], 0, 44, 10)
+  const lines = playground([row('WALK-12'), row('WALK-15', { light: 'waiting' }), row('WALK-20', { light: 'failed' })], 0, 44, 12)
   const all = text(lines).join('\n')
   assert.ok(all.includes('WALK-12') && all.includes('WALK-15') && all.includes('WALK-20'))
   assert.ok(all.includes('⚠') && all.includes('✕'))
   const segs = lines.flatMap((l) => l.left)
   const tag = segs.find((s) => s.text.includes('WALK-12'))
   assert.equal(tag?.tone, cardTone('WALK-12'))
-  // three runners on the track, each in its card's colour (braille cells)
-  const runnerTones = new Set(segs.filter((s) => /[⠁-⣿]/.test(s.text)).map((s) => s.tone))
+  // the runners on the track, each in its card's colour (half-block figures)
+  const runnerTones = new Set(segs.filter((s) => /[▀▄█]/.test(s.text)).map((s) => s.tone))
   assert.ok(runnerTones.has(cardTone('WALK-12')))
 })
 
 test('at most eight runners, the rest named as "+N more"', () => {
   const many = Array.from({ length: 11 }, (_, i) => row(`A-${i + 1}`))
-  const all = text(playground(many, 0, 44, 10)).join('\n')
+  const all = text(playground(many, 0, 44, 12)).join('\n')
   assert.equal(MAX_RUNNERS, 8)
   assert.ok(all.includes('+3'), all)
 })
