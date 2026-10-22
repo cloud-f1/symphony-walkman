@@ -1,4 +1,4 @@
-# Handover (state at v0.15.1, refreshed 2026-10-22)
+# Handover (state at v0.15.2, refreshed 2026-10-22)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.15.1` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.15.2` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -144,4 +144,5 @@ Docker was removed so nothing remains there.
 - Cards worked from the repo root (v0.15.0, WALK-197): `core/touch.ts` `touchedWorktree` finds the card worktree a tool call names (`file_path`, `notebook_path`, `path`, a path in `command`; a prefix is no match; the longest wins). `noteTouch` runs in `tool.check` and `tool.call`; in `load`, when `currentTree` is not a card, `signalOf` lends `live.get(currentTree)` to the touched card for `TOUCH_MS` (10 min). Idle cards are listed in the pane with their Jira status.
 - Asks (v0.15.0): the engine runs `tool.call` -> `tool.check` -> the mode settles the ask (auto mode often approves at once) -> the prompt -> the tool, all inside `tool.call`'s `next(e)`. So an ask is marked only after `ASK_GRACE_MS` (2 s, `$.clock.after`) and cleared in `tool.call`'s `finally`. Up to 0.14.0 it was cleared on the way in, before it existed, and stuck until the turn ended. Tests raise asks through the `asked()` helper, which waits out the grace.
 - Claude Desktop (v0.15.1, WALK-202, owner screenshot 2026-10-22): the pane does draw on Desktop. Its rows have gaps, so half blocks fall apart: on `e.surface === 'desktop'` the signal box is the `signalSvg` walker (`isInteractive: true` for SMIL) beside the signal's text rows. Desktop's `ui.open` can fail with `no-surface` while the pane shows, so `/walkman demo` keeps the demo on. Desktop's composer said `/walkman isn't a command here` although the command ran: a Desktop behaviour, not ours. WALK has an `IN REVIEW` status since 2026-10-22 (category In Progress).
+- Desktop follow-ups (v0.15.2, WALK-207): `signalNumber` is the one countdown (steps left while a TodoWrite list runs, else minutes) for the terminal digits and both Desktop SVGs. Desktop ignores `wrap: 'truncate'` (it ellipsizes), so the rule is left out there. Desktop gives no `scroll.bodyRows` or `viewport.rows`, so the pane assumes 40 rows there for the playground.
 - Process (2026-10-18): open cards with `symphony-workflow start KEY` (In Progress, `.worktrees/`), PRs with `pr KEY` (In Review), close with `land KEY` (Done). Up to WALK-184 cards were made by hand and jumped Backlog -> Done, so the board never showed work in progress.

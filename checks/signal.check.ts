@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { FRAME_MS, SIGNAL_ROWS, bigDigits, leadOf, signalFrame, signalLines, signalPace, sprite } from '../core/signal.ts'
+import { FRAME_MS, SIGNAL_ROWS, bigDigits, leadOf, signalFrame, signalLines, signalNumber, signalPace, sprite } from '../core/signal.ts'
 import { plain } from '../core/style.ts'
 import type { CardRow } from '../core/contracts.ts'
 
@@ -118,4 +118,12 @@ test('the countdown: two big amber digits, right aligned, like the light above t
   assert.ok(digits.every((x) => x?.tone === 'warning'))
   // quiet: no number at all
   assert.ok(signalLines(undefined, 0, 44).slice(0, 3).every((l) => l.left.slice(1).every((x) => !/[█▀▄]/.test(x.text))))
+})
+
+test('one countdown number for every surface: steps left while a step list runs, else the minutes', () => {
+  assert.equal(signalNumber(row({ todo: { done: 1, total: 4 } }), 0), 3)
+  assert.equal(signalNumber(row({}), 12 * 60_000 + 30_000), 12)
+  assert.equal(signalNumber(row({ light: 'waiting', todo: { done: 1, total: 4 }, sinceMs: 0 }), 5 * 60_000), 5) // a stopped card counts minutes
+  // the terminal's big digits show the same number
+  assert.deepEqual(signalLines(row({ todo: { done: 1, total: 4 } }), 0, 44).slice(0, 3).map((l) => l.left[2]?.text), bigDigits(3))
 })

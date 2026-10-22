@@ -15,7 +15,7 @@ import type { JiraIssue } from '../core/jira.ts'
 import { HELP, LEGEND, plain, stylePane, styleBand } from '../core/style.ts'
 import type { Line, PaneLine, Seg, Tone } from '../core/style.ts'
 import { signalSvg } from '../core/svg.ts'
-import { FRAME_MS, SIGNAL_ROWS, leadOf, signalLines, signalPace } from '../core/signal.ts'
+import { FRAME_MS, SIGNAL_ROWS, leadOf, signalLines, signalNumber, signalPace } from '../core/signal.ts'
 import { playground } from '../core/track.ts'
 import { SCENES, demoRows } from '../core/demo.ts'
 import { touchedWorktree } from '../core/touch.ts'
@@ -803,18 +803,22 @@ export function register(on: On, options?: PluginOptions) {
     // On Desktop the half blocks break apart (its rows have gaps), so the box draws the animated SVG walker of
     // core/svg.ts beside the card's words instead (WALK-202); the terminal keeps the half-block figure.
     const Svg = e.surface === 'desktop' ? (elements['Svg'] as ((props: object) => unknown) | undefined) : undefined
+    // its countdown is signalNumber, the same number the text and the terminal digits show (WALK-207)
     const signalBox = Svg
       ? h(
           Box,
           { flexDirection: 'row', borderStyle: 'round', borderColor: THEME[signal[0]?.box?.tone ?? 'subtle'], gap: 2, paddingX: 1 },
-          Svg({ source: signalSvg(lead?.light ?? 'idle', lead ? Math.floor((now - lead.sinceMs) / 1000) : 0), alt: lead ? `${lead.key} is ${lead.light}` : 'nothing is crossing', width: 120, height: 64, isInteractive: true }),
+          Svg({ source: signalSvg(lead?.light ?? 'idle', lead ? signalNumber(lead, now) : 0), alt: lead ? `${lead.key} is ${lead.light}` : 'nothing is crossing', width: 120, height: 64, isInteractive: true }),
           h(Box, { flexDirection: 'column' }, ...signal.map((l) => l.left.slice(2)).filter((segs) => segs.length > 0 && !segs.some((x) => /[▀▄█]/.test(x.text))).map((segs) => styled(Box, Text, segs))),
         )
       : undefined
     // the pane's own rows (viewport is the terminal's: using it drew the playground past the pane's bottom edge)
-    const paneRows = (e.props as { scroll?: { bodyRows?: number } }).scroll?.bodyRows ?? e.viewport?.rows
+    // Desktop gives neither: assume a tall pane there, so the playground draws (WALK-207)
+    const paneRows = (e.props as { scroll?: { bodyRows?: number } }).scroll?.bodyRows ?? e.viewport?.rows ?? (e.surface === 'desktop' ? 40 : undefined)
     const rowsLeft = paneRows === undefined ? undefined : Math.max(4, paneRows - SIGNAL_ROWS - 2 - 1) // the demo or key row
-    const [header, ...rest] = stylePane(v.rows, cache.disk, now, v.others, { rows: rowsLeft, columns: width }, top)
+    const [header, ...all] = stylePane(v.rows, cache.disk, now, v.others, { rows: rowsLeft, columns: width }, top)
+    // Desktop's cells are wider and it ellipsizes a cut Text anyway: leave the rule out there (WALK-207)
+    const rest = e.surface === 'desktop' ? all.filter((l) => !(l.left.length === 1 && /^─+$/.test(l.left[0]?.text ?? ''))) : all
     // the header row: title and counts, then the view switch
     const headRow = h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, styled(Box, Text, (header as PaneLine).left), h(Box, { flexDirection: 'row' }, styled(Box, Text, (header as PaneLine).right ?? []), ...(toggle ? [h(Text, null, '  '), toggle] : [])))
     // the playground (WALK-188) takes the rows left under the cards: a bordered group costs two extra rows
@@ -853,7 +857,7 @@ export function register(on: On, options?: PluginOptions) {
         Box,
         { flexDirection: 'row', paddingX: 1 },
         // Svg is a leaf: call the constructor directly, since h() would hand it an empty `children`.
-        (Svg as (props: object) => unknown)({ source: signalSvg(lead.light, Math.floor((now - lead.sinceMs) / 1000)), alt: `${lead.key} is ${lead.light}`, width: 120, height: 64 }),
+        (Svg as (props: object) => unknown)({ source: signalSvg(lead.light, signalNumber(lead, now)), alt: `${lead.key} is ${lead.light}`, width: 120, height: 64 }),
         h(Box, { flexDirection: 'row', paddingX: 1 }, styled(Box as never, Text as never, styleBand(cache.rows, now))),
       ) as RenderElement
     }
