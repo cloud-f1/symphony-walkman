@@ -770,7 +770,7 @@ test('a running card gets a runner on the playground under the cards, in its own
   await $.turn.start({ text: 'go', turnId: 't1' })
   const pane = flat(await paneOf($, { columns: 44, rows: 40 }))
   expect(pane).toContain('╱') // the oval's rim
-  expect(pane).toMatch(/[⠁-⣿]/) // a braille runner
+  expect(pane).toContain('╭') // the playground's rim (its runners are half-block figures)
   expect(pane).toMatch(/"color":"(claude|ide|planMode|merged|suggestion|bashBorder)"/)
 })
 
@@ -779,7 +779,7 @@ test('quiet: no playground and no runner', async ($, on) => {
   await walkman($, '')
   const pane = flat(await paneOf($, { columns: 44, rows: 40 }))
   expect(pane).not.toContain('╱')
-  expect(pane).not.toMatch(/[⠁-⣿]/)
+  expect(pane).not.toContain('╱') // no oval, so no runner
 })
 
 test('a short pane leaves the playground out rather than squeezing the cards', async ($, on) => {
@@ -824,7 +824,7 @@ test('/walkman demo opens the pane in scene 1; rush hour fills the playground', 
   for (let i = 2; i <= 6; i++) await pressDemo($)
   const pane = flat(await paneOf($, { columns: 44, rows: 60 }))
   expect(pane).toContain('Rush hour')
-  expect(pane).toMatch(/[⠁-⣿]/) // runners
+  expect(pane).toContain('╱') // the oval with its runners
   expect(pane).toContain('+3')
 })
 
@@ -985,10 +985,9 @@ test('on Desktop the playground is an SVG whose runners lap on their own; the te
   await $.turn.start({ text: 'go', turnId: 't1' })
   const desk = flat(await ($ as any).ui.render({ surface: 'desktop', component: 'Pane', requestId: 'walkman-pane', props: {} }))
   expect(desk).toContain('animateMotion')
-  expect(desk).not.toMatch(/[\u2801-\u28ff]/)
   expect(desk).not.toContain('╱')
   const term = flat(await paneOf($, { columns: 44, rows: 40 }))
-  expect(term).toMatch(/[\u2801-\u28ff]/)
+  expect(term).toContain('╱') // the text oval
   expect(term).not.toContain('animateMotion')
 })
 
@@ -996,4 +995,19 @@ test('the /walkman hint names demo', async ($, on) => {
   const s = stubs(on)
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: CWD })
   expect(s.hints.join(' ')).toContain('demo')
+})
+
+// ---------- WALK-222: a playground you can see in the terminal ----------
+test('Rush hour in a 40-row pane keeps rows for the playground; the card list gives way with +N more', async ($, on) => {
+  stubs(on)
+  await walkman($, 'demo')
+  const press = async () => {
+    await paneOf($, { columns: 48, rows: 40 })
+    await ($ as any).ui.press({ plugin: 'symphony-walkman', key: 'demo', requestId: 'walkman-pane', surface: 'terminal' })
+  }
+  for (let i = 2; i <= 6; i++) await press()
+  const pane = flat(await paneOf($, { columns: 48, rows: 40 }))
+  expect(pane).toContain('Rush hour')
+  expect(pane).toContain('╱') // the oval
+  expect(pane).toMatch(/\+\d+ more/) // the list gave way
 })

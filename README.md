@@ -81,19 +81,21 @@ jira ████░░░░  5 todo  5 doing  98 done         2m
 ◌ IN JIRA
   WALK-27   Per-subagent rows
 
- ╭──────────────────────────────────────╮
-╱   ⢼⠆              ⣸⠂             ⣸⠂    ╲
-│⣸⠂╭──────────────────────────────────╮  │
-│  │ WALK-128 ⚠  WALK-129  WALK-130   │  │
-│  ╰──────────────────────────────────╯  │
-╲   ⠰⡧          ⠰⡧                      ╱
- ╰──────────────────────────────────────╯
+  ╭──────────────────────────────────────╮
+ ╱     ▄█▄                   ▄█▄           ╲
+│      █▀█                   ▄▀▄            │
+│▄█▄ ╭────────────────────────────────╮     │
+│▀▄▀ │ WALK-128 ⚠  WALK-129  WALK-130 │     │
+│    ╰────────────────────────────────╯     │
+│                 ▄█▄                       │
+ ╲                ▄▀▄                      ╱
+  ╰──────────────────────────────────────╯
 ```
 
 - **Title row:** how many cards are `⚠` needs you, `✕` failed, `●` running, `✓` done (a zero is dim), and the switch to the board view.
 - **The pedestrian signal** (a Taiwan crossing light in side view, drawn from half blocks so every terminal shows it, with the amber countdown digits above the man's side): it stands for the most urgent card. A **green man walks** while a card runs (two steps a second; four once three quarters of its TodoWrite list are done, with `hurry`), and the number counts the steps left, or the minutes when there is no list. An **amber man stands** when a card needs you, a **red one blinks** when it failed, and a **grey one stands** when nothing is crossing. It moves only while the cards view is open; a quiet pane runs no timer.
 - **Idle cards are listed**, one line each (`○ WALK-197  title … In Progress`) with their Jira status when the project is linked, so a card with a worktree and nobody in it never vanishes behind `all quiet`.
-- **The playground** (in the rows left under the cards, only while a card runs, needs you or failed): one small runner per card laps an oval track, counterclockwise. Each card has its own colour (theme colours that mean nothing about status; with more than six runners colours repeat) and is a man or a woman by its key; the infield shows the keys as name tags in those colours. A runner speeds up once three quarters of its TodoWrite list is done and each card has its own slight pace; a card that needs you stands where it stopped (`⚠`), a failed one lies down (`✕`). At most eight runners (`+N` for the rest). A short pane leaves the playground out.
+- **The playground** (in the rows left under the cards, only while a card runs, needs you or failed): one runner per card (a 3 x 2 half-block figure in the terminal, an SVG figure on Desktop) laps an oval track, counterclockwise. While cards run and the pane is tall enough, the pane keeps about 13 rows for it and the card list gives way with `+N more` (the list always keeps at least 8 rows). Each card has its own colour (theme colours that mean nothing about status; with more than six runners colours repeat) and is a man or a woman by its key; the infield shows the keys as name tags in those colours. A runner speeds up once three quarters of its TodoWrite list is done and each card has its own slight pace; a card that needs you stands where it stopped (`⚠`), a failed one lies down (`✕`). At most eight runners (`+N` for the rest). A short pane leaves the playground out.
 - **Meters (always on top), in the status line's style** (`█` filled, `░` the rest, both in the meter's colour): the disk (amber from 80% used, red from 90%) and, in a repo linked to Jira, the project's open work (in progress over all open), the counts and how long ago the board was read.
 - **Needs you** and **failed** sit under a chip on their colour (` NEEDS YOU ` amber, ` FAILED ` red), each card in a **bold box** of that colour, the longest-waiting first. The second line says why, only from what is known: the tool waiting for approval (its name only, never its input), a question Claude asked you (`AskUserQuestion`), or a symphony run in `plan_ready`.
 - **Running** cards share one **round green box**: title, the session's TodoWrite progress (`3/5`), a symphony five-step line, the minutes, and one row per subagent (at most five). Done and idle fold into one line.
@@ -303,6 +305,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | Claude Desktop follow-ups, 0.15.2 (owner screenshots from Claude Desktop of 0.15.1, 2026-10-22) | Seen on Desktop with 0.15.1: the SVG walker in the signal box (grey and standing when quiet, green in Rush hour), the DEMO chip, the `D` / `B` key buttons and the running list, all drawn well. Fixed from those screenshots: the SVG countdown showed seconds (`83`) while the text said `5 steps left` (now one number, `signalNumber`, for the terminal digits, the pane SVG and the band SVG), the rule still ended in `…` (left out on Desktop), and Rush hour drew no playground although there was room (Desktop gives no pane rows; it now assumes a tall pane). **Not yet seen:** these three fixes on Desktop, and braille runners there |
 | Desktop playground as SVG, prompt hint, 0.16.0 (owner screenshots from Claude Desktop of 0.15.2, 2026-10-22; SVG rendered in headless Chrome; terminal re-checked in a real session) | Seen on Desktop with 0.15.2: one countdown number (`04` beside `4 steps left`) and no rule, as fixed; but the text playground fell apart there (borders out of line, rows cut with `…`, braille dots scattered) and the board view's column rule ended in `…`. Now Desktop draws the playground as an SVG stadium: one figure per card in its colour lapping with SMIL `animateMotion`, standing with `⚠` or lying with `✕` when stopped, name tags in the infield; headless Chrome drew it legibly on light and dark. The board view leaves its column rules out on Desktop. The `/walkman` prompt hint now lists `demo` (it was missing since 0.14.0) and comes from one list a check keeps equal to HELP. Terminal: help text and the text playground unchanged. Then seen in Claude Desktop (owner screenshots, Rush hour and A day in the life): the stadium with eight coloured figures, name tags in their colours and `+3` |
 | One look on Desktop, 0.16.1 (SVG rendered in headless Chrome, 2026-10-22) | Passed: the Desktop signal's man is now the Taiwan side view like the terminal's (head ahead of the hips, leaning, legs and arms swinging); a card that needs you stands in amber there too (it was red), a failed one in red; the SVG playground gives eight runners eight different colours (six repeated before). **Not yet seen:** these in Claude Desktop itself |
+| Terminal playground you can see, 0.17.0 (real session, 130 x 42 terminal, demo mode, 2026-10-23) | Passed: Rush hour, which drew no playground before, now kept rows for it: the list showed four cards and `+7 more`, below them an oval of 12 rows with eight half-block runners (`▄█▄` over `▄▀▄`, women in skirts `█▀█`), name tags and `+3`; A fall showed the lying runner `▄▄█` with `✕`. Owner screenshots that led here: braille runners barely visible in Ghostty, a squat track, no room in Rush hour. **Not seen live:** the new runners in the owner's Ghostty |
 | A worktree the session left keeps no needs-you, 0.7.1 (2026-10-16) | Mod test only: an ask in one worktree, then a turn in another, leaves the first idle. Seen live before the fix (three worktrees red for 24 hours). **Not seen** in a real session after the fix: moving a real session between worktrees was not driven |
 | Windows | **Not run**: no Windows machine. The disk line is skipped there and paths are untested |
 

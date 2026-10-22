@@ -16,7 +16,7 @@ import { HELP, LEGEND, SUBCOMMANDS, plain, stylePane, styleBand } from '../core/
 import type { Line, PaneLine, Seg, Tone } from '../core/style.ts'
 import { signalSvg } from '../core/svg.ts'
 import { FRAME_MS, SIGNAL_ROWS, leadOf, signalLines, signalNumber, signalPace } from '../core/signal.ts'
-import { playground } from '../core/track.ts'
+import { TRACK_ROWS, playground } from '../core/track.ts'
 import { SCENES, demoRows } from '../core/demo.ts'
 import { touchedWorktree } from '../core/touch.ts'
 import { playgroundSvg } from '../core/tracksvg.ts'
@@ -339,6 +339,7 @@ async function refresh($: Engine): Promise<void> {
 const TICK_MS = 30_000
 const TICK_DESKTOP_MS = 1_000
 const RUNNER_MS = 250 // a runner moves about a cell per frame
+const LIST_MIN_ROWS = 8 // the card list keeps at least this many rows before any are kept for the playground
 let tickerMs = 0
 let desktopSeen = false
 function syncTicker($: Engine, rows: readonly CardRow[] = cache.rows): void {
@@ -817,7 +818,13 @@ export function register(on: On, options?: PluginOptions) {
     // the pane's own rows (viewport is the terminal's: using it drew the playground past the pane's bottom edge)
     // Desktop gives neither: assume a tall pane there, so the playground draws (WALK-207)
     const paneRows = (e.props as { scroll?: { bodyRows?: number } }).scroll?.bodyRows ?? e.viewport?.rows ?? (e.surface === 'desktop' ? 40 : undefined)
-    const rowsLeft = paneRows === undefined ? undefined : Math.max(4, paneRows - SIGNAL_ROWS - 2 - 1) // the demo or key row
+    // while cards run, the terminal keeps rows for the playground and the card list gives way with "+N more"
+    // (Rush hour left the playground no room at all; WALK-222). Desktop's SVG track sits below whatever is left.
+    const racing = e.surface !== 'desktop' && v.rows.some((r) => r.light === 'walking' || r.light === 'waiting' || r.light === 'failed')
+    // The cards come first: the playground's rows are kept only when the list still has LIST_MIN_ROWS after them.
+    const listRoom = paneRows === undefined ? 0 : paneRows - SIGNAL_ROWS - 2 - 1 // the demo or key row
+    const keep = racing && listRoom - (TRACK_ROWS + 1) >= LIST_MIN_ROWS ? TRACK_ROWS + 1 : 0
+    const rowsLeft = paneRows === undefined ? undefined : Math.max(4, listRoom - keep)
     const [header, ...all] = stylePane(v.rows, cache.disk, now, v.others, { rows: rowsLeft, columns: width }, top)
     // Desktop's cells are wider and it ellipsizes a cut Text anyway: leave the rule out there (WALK-207)
     const rest = e.surface === 'desktop' ? all.filter((l) => !(l.left.length === 1 && /^─+$/.test(l.left[0]?.text ?? ''))) : all
@@ -827,7 +834,7 @@ export function register(on: On, options?: PluginOptions) {
     const boxes = new Set(rest.map((l) => (l as PaneLine).box?.id).filter((id) => id !== undefined)).size
     const used = 1 + 1 + SIGNAL_ROWS + 2 + rest.length + 2 * boxes // title, the demo or key row, the signal box
     const free = paneRows === undefined ? 0 : paneRows - used - 1
-    const track = Svg ? [] : playground(v.rows, now, width - 2, Math.min(14, free))
+    const track = Svg ? [] : playground(v.rows, now, width - 2, Math.min(TRACK_ROWS + 2, free))
     // On Desktop the text track falls apart: the SVG stadium instead, its runners lapping on their own (WALK-212)
     const trackSvg = Svg ? playgroundSvg(v.rows, now) : undefined
     return h(Box, { flexDirection: 'column', paddingX: 1 }, headRow, ...(demoRow ? [demoRow] : []), ...(signalBox ? [signalBox] : paneBody(Box, Text, signal)), ...paneBody(Box, Text, rest), ...(track.length > 0 ? [h(Text, null, ' '), ...paneBody(Box, Text, track)] : []), ...(trackSvg && Svg ? [h(Text, null, ' '), Svg({ source: trackSvg, alt: 'the running cards lapping a track', width: 320, height: 150, isInteractive: true })] : []), ...(keyRow ? [keyRow] : [])) as RenderElement

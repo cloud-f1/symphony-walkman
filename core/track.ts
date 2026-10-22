@@ -1,20 +1,24 @@
 import type { CardRow, Light } from './contracts.ts'
 import { clipCells, cells } from './style.ts'
+import { sprite } from './signal.ts'
 import type { PaneLine, Seg, Tone } from './style.ts'
 
-// The playground (WALK-188): one small runner per running card laps an oval track in the pane's free rows, in the
-// card's own colour. Pure: places come from the clock value the adapter hands in, never from state kept here.
+// The playground (WALK-188, redrawn in WALK-222): one runner per running card laps an oval track in the pane's
+// free rows, in the card's own colour. Runners are 3 x 2 half-block figures (braille dots were near invisible in
+// Ghostty). Pure: places come from the clock value the adapter hands in, never from state kept here.
 //
-//  ╭────────────────────────────────╮     row 0: the outer rim
-// ╱ ⠠⠷  →   ⢠⠷                      ╲    row 1: the top straight (runners go left: counterclockwise from above)
-// │  ╭────────────────────────────╮  │    rows 2..H-3: the bends, two cells wide, inside an infield
-// │  │ WALK-12  WALK-15 ⚠        │  │    the infield: name tags in each card's colour
-// │  ╰────────────────────────────╯  │
-// ╲   ⢠⠷                            ╱    row H-2: the bottom straight (runners go right)
-//  ╰────────────────────────────────╯
+//   ╭──────────────────────────────────╮      row 0: the rim
+//  ╱  ▄█▄       ▄█▄  ←                  ╲     rows 1-2: the top straight (runners go left: counterclockwise)
+// │   ▀▄▀       ▄▀▄                      │
+// │▄█▄ ╭────────────────────────────╮    │    rows 3..H-4: the bends, three cells wide, around the infield
+// │▀▄▀ │ WALK-12  WALK-15 ⚠        │    │    the infield: name tags in each card's colour
+// │    ╰────────────────────────────╯    │
+//  ╲        ▄█▄          →             ╱     rows H-3..H-2: the bottom straight (runners go right)
+//   ╰──────────────────────────────────╯      row H-1: the rim
 
-export const TRACK_MIN_ROWS = 7 // rim, straight, infield top, one infield row, infield bottom, straight, rim
-export const TRACK_MIN_COLUMNS = 20
+export const TRACK_MIN_ROWS = 10 // rim, two straight rows, infield top, two infield rows, infield bottom, two straight rows, rim
+export const TRACK_MIN_COLUMNS = 24
+export const TRACK_ROWS = 12 // what the pane keeps for the playground while cards run
 export const MAX_RUNNERS = 8
 const BASE_SPEED = 4 // cells a second
 const FRAME_MS = 250
@@ -50,53 +54,47 @@ export function trackTones(keys: readonly string[]): Map<string, CardTone> {
   return out
 }
 
-// A 4 x 4 pixel figure as two braille cells (each cell is 2 x 4 dots).
-const DOT = [[0x01, 0x08], [0x02, 0x10], [0x04, 0x20], [0x40, 0x80]] as const
-export function braille(bitmap: readonly string[]): string {
-  let out = ''
-  for (let c = 0; c < 2; c++) {
-    let bits = 0
-    for (let y = 0; y < 4; y++) for (let x = 0; x < 2; x++) if ((bitmap[y] ?? '')[c * 2 + x] === '#') bits |= (DOT[y] as readonly number[])[x] as number
-    out += String.fromCharCode(0x2800 + bits)
-  }
-  return out
+// A runner: a 3 x 4 pixel figure, two pixel rows to a half-block row, so 3 cells by 2 rows. Facing right; a woman
+// wears a skirt (the third pixel row is full).
+const FIG = {
+  manA: ['.#.', '###', '.#.', '#.#'], manB: ['.#.', '##.', '.#.', '.#.'],
+  womanA: ['.#.', '###', '###', '#.#'], womanB: ['.#.', '##.', '###', '.#.'],
+  manStand: ['.#.', '###', '.#.', '#.#'], womanStand: ['.#.', '###', '###', '#.#'],
+  fallen: ['...', '...', '..#', '###'],
 }
 const mirror = (b: readonly string[]) => b.map((r) => [...r].reverse().join(''))
-// Facing right; a woman wears a skirt (the third row is full).
-const FIG = {
-  manA: ['..#.', '.###', '..#.', '.#.#'], manB: ['..#.', '.##.', '..#.', '..##'],
-  womanA: ['..#.', '.###', '.###', '.#.#'], womanB: ['..#.', '.##.', '.###', '..#.'],
-  manStand: ['.#..', '###.', '.#..', '.#..'], womanStand: ['.#..', '###.', '###.', '.#..'],
-  fallen: ['....', '....', '#...', '####'],
+
+export type Runner = { key: string; light: Light; tone: CardTone; woman: boolean; speed: number; pos: number; x: number; y: number; glyph: string[] }
+
+// The lap: every top-left cell a runner takes, counterclockwise from the top right (top straight going left, down
+// the left bend, bottom straight going right, up the right bend), and which way it faces there.
+function lapOf(width: number, height: number): { x: number; y: number; right: boolean }[] {
+  const left = 1
+  const right = width - 4
+  const top = 1
+  const bottom = height - 3
+  const out: { x: number; y: number; right: boolean }[] = []
+  for (let x = right; x > left; x--) out.push({ x, y: top, right: false })
+  for (let y = top; y < bottom; y++) out.push({ x: left, y, right: false })
+  for (let x = left; x < right; x++) out.push({ x, y: bottom, right: true })
+  for (let y = bottom; y > top; y--) out.push({ x: right, y, right: true })
+  return out
 }
-
-export type Runner = { key: string; light: Light; tone: CardTone; woman: boolean; speed: number; pos: number; x: number; y: number; glyph: string }
-
-export const lapLength = (width: number, height: number): number => 2 * (width - 3) + 2 * (height - 4)
-
-// Where a lap position sits: x of the runner's first cell, the row, and which way it faces.
-function placeOf(pos: number, width: number, height: number): { x: number; y: number; right: boolean } {
-  const straight = width - 3
-  const bend = height - 4
-  if (pos < straight) return { x: width - 3 - pos, y: 1, right: false } // top straight, going left
-  if (pos < straight + bend) return { x: 1, y: 2 + (pos - straight), right: false } // left bend, going down
-  if (pos < 2 * straight + bend) return { x: 1 + (pos - straight - bend), y: height - 2, right: true } // bottom, going right
-  return { x: width - 3, y: height - 3 - (pos - 2 * straight - bend), right: true } // right bend, going up
-}
+export const lapLength = (width: number, height: number): number => lapOf(width, height).length
 
 export function runnerOf(r: CardRow, now: number, width: number, height: number): Runner {
   const h = hash(r.key)
-  const lap = lapLength(width, height)
+  const lap = lapOf(width, height)
   const near = r.light === 'walking' && r.todo !== undefined && r.todo.total > 0 && r.todo.done / r.todo.total >= 0.75
   const speed = (Math.round(BASE_SPEED * (80 + ((h >>> 8) % 41))) / 100) * (near ? 1.5 : 1) // 3.2 to 4.8 cells a second
   const at = r.light === 'walking' ? now : r.sinceMs // a stopped runner stays where it stopped
-  const pos = Math.floor((Math.max(0, at) / 1000) * speed + (h % lap)) % lap
+  const pos = Math.floor((Math.max(0, at) / 1000) * speed + (h % lap.length)) % lap.length
   const woman = ((h >>> 4) & 1) === 1
-  const place = placeOf(pos, width, height)
+  const place = lap[pos] as { x: number; y: number; right: boolean }
   const step = Math.floor(Math.max(0, now) / FRAME_MS) % 2 === 0
   const bitmap =
     r.light === 'failed' ? FIG.fallen : r.light === 'waiting' ? (woman ? FIG.womanStand : FIG.manStand) : woman ? (step ? FIG.womanA : FIG.womanB) : step ? FIG.manA : FIG.manB
-  return { key: r.key, light: r.light, tone: cardTone(r.key), woman, speed, pos, x: place.x, y: place.y, glyph: braille(place.right ? bitmap : mirror(bitmap)) }
+  return { key: r.key, light: r.light, tone: cardTone(r.key), woman, speed, pos, x: place.x, y: place.y, glyph: sprite(place.right ? bitmap : mirror(bitmap)) }
 }
 
 const MARK: Partial<Record<Light, Seg>> = { waiting: { text: '⚠', tone: 'warning', bold: true }, failed: { text: '✕', tone: 'error', bold: true } }
@@ -114,20 +112,22 @@ export function playground(rows: readonly CardRow[], now: number, width: number,
   const put = (x: number, y: number, ch: string, tone: Tone = rim, bold = false) => {
     if (y >= 0 && y < H && x >= 0 && x < W) (grid[y] as Cell[])[x] = { ch, tone, bold }
   }
-  // the outer rim, rounded at the ends
-  put(1, 0, '╭'); put(W - 2, 0, '╮'); put(1, H - 1, '╰'); put(W - 2, H - 1, '╯')
-  for (let x = 2; x < W - 2; x++) { put(x, 0, '─'); put(x, H - 1, '─') }
-  put(0, 1, '╱'); put(W - 1, 1, '╲'); put(0, H - 2, '╲'); put(W - 1, H - 2, '╱')
+  // the rim: rounded at the top and bottom, slanted at the corners, so it reads as an oval
+  put(2, 0, '╭'); put(W - 3, 0, '╮'); put(2, H - 1, '╰'); put(W - 3, H - 1, '╯')
+  for (let x = 3; x < W - 3; x++) { put(x, 0, '─'); put(x, H - 1, '─') }
+  put(1, 1, '╱'); put(W - 2, 1, '╲'); put(1, H - 2, '╲'); put(W - 2, H - 2, '╱')
   for (let y = 2; y < H - 2; y++) { put(0, y, '│'); put(W - 1, y, '│') }
-  // the infield
-  put(3, 2, '╭'); put(W - 4, 2, '╮'); put(3, H - 3, '╰'); put(W - 4, H - 3, '╯')
-  for (let x = 4; x < W - 4; x++) { put(x, 2, '─'); put(x, H - 3, '─') }
-  for (let y = 3; y < H - 3; y++) { put(3, y, '│'); put(W - 4, y, '│') }
+  // the infield, inside the bends (three cells each side)
+  const il = 5
+  const ir = W - 6
+  put(il, 3, '╭'); put(ir, 3, '╮'); put(il, H - 4, '╰'); put(ir, H - 4, '╯')
+  for (let x = il + 1; x < ir; x++) { put(x, 3, '─'); put(x, H - 4, '─') }
+  for (let y = 4; y < H - 4; y++) { put(il, y, '│'); put(ir, y, '│') }
 
   // name tags in the infield, in each card's colour, wrapped over its rows
   const shown = racing.slice(0, MAX_RUNNERS)
   const tones = trackTones(shown.map((r) => r.key))
-  const inner = W - 10 // the infield's inside, less a cell of space each side
+  const inner = ir - il - 3 // inside the infield, less a cell of space each side
   const tags: Seg[][] = [[]]
   let used = 0
   const words: Seg[][] = shown.map((r) => [{ text: r.key, tone: tones.get(r.key) as CardTone, bold: true }, ...(MARK[r.light] ? [{ text: ' ' }, MARK[r.light] as Seg] : [])])
@@ -139,20 +139,18 @@ export function playground(rows: readonly CardRow[], now: number, width: number,
     ;(tags[tags.length - 1] as Seg[]).push(...w)
     used += (used > 0 ? 2 : 0) + len
   }
-  tags.slice(0, H - 6).forEach((line, i) => {
-    let x = 5
-    for (const s of line) for (const ch of clipCells(s.text, Math.max(0, W - 5 - x))) put(x++, 3 + i, ch, s.tone ?? 'text', s.bold === true)
+  tags.slice(0, H - 8).forEach((line, i) => {
+    let x = il + 2
+    for (const s of line) for (const ch of clipCells(s.text, Math.max(0, ir - 1 - x))) put(x++, 4 + i, ch, s.tone ?? 'text', s.bold === true)
   })
 
-  // the runners, then a stopped runner's mark just ahead of it on a straight
+  // the runners (3 x 2 cells), then a stopped runner's mark just ahead of it
   for (const r of shown) {
     const run = runnerOf(r, now, W, H)
-    const [a, b] = [...run.glyph]
     const tone = tones.get(r.key) as CardTone
-    put(run.x, run.y, a as string, tone, true)
-    put(run.x + 1, run.y, b as string, tone, true)
+    run.glyph.forEach((line, dy) => [...line].forEach((ch, dx) => { if (ch !== ' ') put(run.x + dx, run.y + dy, ch, tone, true) }))
     const mark = MARK[r.light]
-    if (mark && (run.y === 1 || run.y === H - 2) && run.x + 2 <= W - 2) put(run.x + 2, run.y, mark.text, mark.tone, true)
+    if (mark) put(run.x + 3, run.y, mark.text, mark.tone, true)
   }
 
   // rows of cells into styled segments, one per run of the same tone
