@@ -12,13 +12,14 @@ import type { Board, BoardIssue } from '../core/jiraboard.ts'
 import { doctorLines, envNames, hasAnsi } from '../core/doctor.ts'
 import { SW_GIT, SW_REF, VERSION } from '../core/version.ts'
 import type { JiraIssue } from '../core/jira.ts'
-import { HELP, LEGEND, plain, stylePane, styleBand } from '../core/style.ts'
+import { HELP, LEGEND, SUBCOMMANDS, plain, stylePane, styleBand } from '../core/style.ts'
 import type { Line, PaneLine, Seg, Tone } from '../core/style.ts'
 import { signalSvg } from '../core/svg.ts'
 import { FRAME_MS, SIGNAL_ROWS, leadOf, signalLines, signalNumber, signalPace } from '../core/signal.ts'
 import { playground } from '../core/track.ts'
 import { SCENES, demoRows } from '../core/demo.ts'
 import { touchedWorktree } from '../core/touch.ts'
+import { playgroundSvg } from '../core/tracksvg.ts'
 import { isRecordName, otherSessionLights, parsePs, parseRecord, parseTasklist } from '../core/sessions.ts'
 import type { SessionRecord } from '../core/sessions.ts'
 import { CARD_CELLS, boardGrid } from '../core/boardgrid.ts'
@@ -603,7 +604,7 @@ export function register(on: On, options?: PluginOptions) {
 
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: 'walkman', description: 'Card board: pane (default), board, doctor, version, help', argumentHint: 'board|board print|pane|pane close|doctor|version|help', immediate: true })
+      await $.command.register({ name: 'walkman', description: 'Card board: pane (default), board, demo, doctor, version, help', argumentHint: SUBCOMMANDS.join('|'), immediate: true })
     } catch {
       // A taken command name must not stop the session from starting.
     }
@@ -778,8 +779,9 @@ export function register(on: On, options?: PluginOptions) {
       if (grid.to < grid.total) buttons.push(h(Button, { key: 'right', label: '▶', hotkey: 'l', plain: true, onPress: redraw(() => (boardOffset = grid.from + 1)) }))
       // the title has the whole row; the buttons sit on their own row under it (a narrow pane cut the title and wrapped ▶)
       const head = h(Box, { flexDirection: 'column' }, styled(Box, Text, grid.title), h(Box, { flexDirection: 'row' }, ...buttons.flatMap((b, i) => (i === 0 ? [b] : [h(Text, null, '   '), b])), ...(grid.position ? [h(Text, null, '   '), styled(Box, Text, grid.position)] : [])))
+      // Desktop ellipsizes a rule, so the column rule is left out there (WALK-212)
       const columns = grid.columns.map((c, i) =>
-        h(Box, { flexDirection: 'column', width: CARD_CELLS, ...(i < grid.columns.length - 1 ? { marginRight: 2 } : {}) }, styled(Box, Text, c.header), styled(Box, Text, [{ text: '─'.repeat(CARD_CELLS), tone: 'subtle' }]), ...c.cards.map((card) => cardBox(Box, Text, card)), ...c.body.map((l) => styled(Box, Text, l))),
+        h(Box, { flexDirection: 'column', width: CARD_CELLS, ...(i < grid.columns.length - 1 ? { marginRight: 2 } : {}) }, styled(Box, Text, c.header), ...(e.surface === 'desktop' ? [] : [styled(Box, Text, [{ text: '─'.repeat(CARD_CELLS), tone: 'subtle' }])]), ...c.cards.map((card) => cardBox(Box, Text, card)), ...c.body.map((l) => styled(Box, Text, l))),
       )
       return h(Box, { flexDirection: 'column', paddingX: 1, gap: 1 }, head, ...(grid.empty ? [styled(Box, Text, grid.empty)] : []), h(Box, { flexDirection: 'row' }, ...columns), styled(Box, Text, grid.keys)) as RenderElement
     }
@@ -825,8 +827,10 @@ export function register(on: On, options?: PluginOptions) {
     const boxes = new Set(rest.map((l) => (l as PaneLine).box?.id).filter((id) => id !== undefined)).size
     const used = 1 + 1 + SIGNAL_ROWS + 2 + rest.length + 2 * boxes // title, the demo or key row, the signal box
     const free = paneRows === undefined ? 0 : paneRows - used - 1
-    const track = playground(v.rows, now, width - 2, Math.min(14, free))
-    return h(Box, { flexDirection: 'column', paddingX: 1 }, headRow, ...(demoRow ? [demoRow] : []), ...(signalBox ? [signalBox] : paneBody(Box, Text, signal)), ...paneBody(Box, Text, rest), ...(track.length > 0 ? [h(Text, null, ' '), ...paneBody(Box, Text, track)] : []), ...(keyRow ? [keyRow] : [])) as RenderElement
+    const track = Svg ? [] : playground(v.rows, now, width - 2, Math.min(14, free))
+    // On Desktop the text track falls apart: the SVG stadium instead, its runners lapping on their own (WALK-212)
+    const trackSvg = Svg ? playgroundSvg(v.rows, now) : undefined
+    return h(Box, { flexDirection: 'column', paddingX: 1 }, headRow, ...(demoRow ? [demoRow] : []), ...(signalBox ? [signalBox] : paneBody(Box, Text, signal)), ...paneBody(Box, Text, rest), ...(track.length > 0 ? [h(Text, null, ' '), ...paneBody(Box, Text, track)] : []), ...(trackSvg && Svg ? [h(Text, null, ' '), Svg({ source: trackSvg, alt: 'the running cards lapping a track', width: 320, height: 150, isInteractive: true })] : []), ...(keyRow ? [keyRow] : [])) as RenderElement
   })
 
   // The person closed the pane (its x, Esc, /walkman pane close): stop keeping its title current.

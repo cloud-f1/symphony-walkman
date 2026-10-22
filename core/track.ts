@@ -32,6 +32,7 @@ function hash(key: string): number {
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0
   return (h ^ (h >>> 16)) >>> 0
 }
+export const keyHash = (key: string): number => hash(key) // the SVG playground spreads pace the same way
 export const cardTone = (key: string): CardTone => CARD_TONES[hash(key) % CARD_TONES.length] as CardTone
 
 // Colours for the runners on one track: each card its own colour, the next free one when two cards hash alike
