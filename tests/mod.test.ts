@@ -13,6 +13,7 @@ interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict
 function stubs(on: any, setup: Setup = {}) {
   const files = setup.files ?? {}
   const registered: string[] = []
+  const hints: string[] = []
   const panes: string[] = []
   const titles: string[] = []
   let worktreeCalls = 0
@@ -67,11 +68,11 @@ function stubs(on: any, setup: Setup = {}) {
     Button: ({ children, ...props }: any) => ({ type: 'Button', props, children }),
     ...(setup.image ? { Image: (props: any) => ({ type: 'Image', props }) } : {}),
   }))
-  on('command.register', (_: any, e: any) => { registered.push(e.name); return { value: undefined } })
+  on('command.register', (_: any, e: any) => { registered.push(e.name); hints.push(String(e.argumentHint ?? '')); return { value: undefined } })
   on('session.start', () => ({ cwd: CWD }))
   on('turn.start', (_: any, e: any) => ({ turnId: e.turnId }))
   on('turn.complete', (_: any, e: any) => ({ text: e.answer ?? '' }))
-  return { registered, panes, titles, jiraCalls, jiraEnvs, counts, toasts, clock, invalidated }
+  return { registered, hints, panes, titles, jiraCalls, jiraEnvs, counts, toasts, clock, invalidated }
 }
 
 const walkman = ($: any, args: string): Promise<{ text: string }> => $.command.run({ command: 'walkman', args })
@@ -974,5 +975,25 @@ test('on Desktop the SVG countdown is the same number as the text (steps left), 
   expect(desk).toContain('Rush hour')
   expect(desk).toContain('>05<') // DEMO-20 has 5 steps left: the SVG shows 05, not seconds
   expect(desk).not.toMatch(/"children":\["─+"\]/) // no rule line on Desktop
-  expect(desk).toMatch(/[\u2801-\u28ff]/) // the playground's runners
+  expect(desk).toContain('animateMotion') // the playground's runners (an SVG on Desktop since 0.16.0)
+})
+
+// ---------- WALK-212: Desktop playground and the prompt hint ----------
+test('on Desktop the playground is an SVG whose runners lap on their own; the terminal keeps the text track', async ($, on) => {
+  stubs(on)
+  await walkman($, '')
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const desk = flat(await ($ as any).ui.render({ surface: 'desktop', component: 'Pane', requestId: 'walkman-pane', props: {} }))
+  expect(desk).toContain('animateMotion')
+  expect(desk).not.toMatch(/[\u2801-\u28ff]/)
+  expect(desk).not.toContain('╱')
+  const term = flat(await paneOf($, { columns: 44, rows: 40 }))
+  expect(term).toMatch(/[\u2801-\u28ff]/)
+  expect(term).not.toContain('animateMotion')
+})
+
+test('the /walkman hint names demo', async ($, on) => {
+  const s = stubs(on)
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: CWD })
+  expect(s.hints.join(' ')).toContain('demo')
 })

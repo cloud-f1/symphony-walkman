@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { LEGEND, diskBar, formatMinutes, plain, progressBar, styleBand, stylePane, styleBoard } from '../core/style.ts'
+import { HELP, LEGEND, SUBCOMMANDS, diskBar, formatMinutes, plain, progressBar, styleBand, stylePane, styleBoard } from '../core/style.ts'
 import type { PaneLine } from '../core/style.ts'
 import { renderBoard } from '../core/board.ts'
 import type { CardRow } from '../core/contracts.ts'
@@ -259,4 +259,10 @@ test('a running card lists its subagents under it, at most five, then "+N more" 
   assert.match(t[main + 2] ?? '', /└ ⚠ general-purpose {2}task 1/)
   assert.equal(t.filter((l) => l.includes('└')).length, 5)
   assert.ok(t.some((l) => l.includes('+2 more agents')))
+})
+
+test('the prompt hint lists every /walkman argument that HELP documents, and the other way round', () => {
+  const documented = HELP.split('\n').map((l) => /^\/walkman( [a-z]+(?: [a-z]+)?)?\s{2,}/.exec(l)?.[1]?.trim()).filter((x): x is string => x !== undefined)
+  for (const d of documented) assert.ok((SUBCOMMANDS as readonly string[]).includes(d), `HELP has ${d}, the hint does not`)
+  for (const s of SUBCOMMANDS) if (s !== 'debug' && s !== 'pane') assert.ok(documented.includes(s), `the hint has ${s}, HELP does not`)
 })
