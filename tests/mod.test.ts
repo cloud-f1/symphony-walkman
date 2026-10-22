@@ -963,3 +963,16 @@ test('the rule under the meters is cut at the edge without an ellipsis', async (
   const pane = flat(await paneOf($))
   expect(pane).toMatch(/"wrap":"truncate"\},"children":\["─+"\]/)
 })
+
+// ---------- WALK-207: Desktop follow-ups ----------
+test('on Desktop the SVG countdown is the same number as the text (steps left), there is no rule, and the playground draws without pane rows', async ($, on) => {
+  stubs(on)
+  await walkman($, 'demo')
+  const press = () => ($ as any).ui.press({ plugin: 'symphony-walkman', key: 'demo', requestId: 'walkman-pane', surface: 'desktop' })
+  for (let i = 2; i <= 6; i++) { await ($ as any).ui.render({ surface: 'desktop', component: 'Pane', requestId: 'walkman-pane', props: {} }); await press() }
+  const desk = flat(await ($ as any).ui.render({ surface: 'desktop', component: 'Pane', requestId: 'walkman-pane', props: {} })) // no rows given
+  expect(desk).toContain('Rush hour')
+  expect(desk).toContain('>05<') // DEMO-20 has 5 steps left: the SVG shows 05, not seconds
+  expect(desk).not.toMatch(/"children":\["─+"\]/) // no rule line on Desktop
+  expect(desk).toMatch(/[\u2801-\u28ff]/) // the playground's runners
+})

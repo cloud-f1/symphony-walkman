@@ -81,6 +81,13 @@ export function leadOf(rows: readonly CardRow[]): CardRow | undefined {
   return oldest('waiting') ?? oldest('failed') ?? oldest('walking')
 }
 
+// The countdown every surface shows (the terminal's big digits, Desktop's SVG): the steps left while a card walks
+// through a TodoWrite list, else the whole minutes since its light changed.
+export function signalNumber(lead: CardRow, now: number): number {
+  const steps = lead.light === 'walking' && lead.todo && lead.todo.total > 0 ? lead.todo.total - lead.todo.done : undefined
+  return steps ?? Math.floor((now - lead.sinceMs) / 60_000)
+}
+
 const STATE: Record<Light, string> = { walking: 'walking', waiting: 'needs you', failed: 'failed', done: 'done', idle: 'quiet' }
 const BOX: PaneBox = { id: -1, style: 'round', tone: 'subtle' }
 
@@ -98,7 +105,7 @@ export function signalLines(lead: CardRow | undefined, now: number, width: numbe
   } else {
     const steps = lead.todo && lead.todo.total > 0 ? lead.todo.total - lead.todo.done : undefined
     const counting = lead.light === 'walking' && steps !== undefined
-    const number = counting ? (steps as number) : Math.floor((now - lead.sinceMs) / 60_000)
+    const number = signalNumber(lead, now)
     const count = counting ? `${steps} ${steps === 1 ? 'step' : 'steps'} left` : formatMinutes(now - lead.sinceMs)
     const hurry = pace === 'fast' ? ' · hurry' : ''
     text = [
