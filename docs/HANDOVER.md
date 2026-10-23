@@ -1,4 +1,4 @@
-# Handover (state at v0.17.0, refreshed 2026-10-23)
+# Handover (state at v0.17.1, refreshed 2026-10-23)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.17.0` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.17.1` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -149,4 +149,5 @@ Docker was removed so nothing remains there.
 - Desktop playground (v0.16.0, WALK-212): text art falls apart on Desktop, so `core/tracksvg.ts` `playgroundSvg` draws an SVG stadium whose figures lap with `animateMotion` (duration from the card's pace, begin offset from its key). The markup holds no clock, so redraws give the same SVG and the animation is not restarted. Colours are `CARD_HEX` (card0..card5, readable on light and dark). `SUBCOMMANDS` in core/style.ts feeds the `/walkman` argument hint; a check keeps it equal to HELP.
 - One look (v0.16.1, WALK-217, Epic WALK-216 'WALK-E3'): `core/svg.ts` draws the side-view walker and standing man (data-figure markers for the checks); needs-you is amber on Desktop too. `core/tracksvg.ts` has eight `CARD_HEX` colours with its own free-colour assignment.
 - Terminal playground (v0.17.0, WALK-222, Epic WALK-221 'WALK-E4'): runners are 3 x 2 half-block figures (`sprite` from core/signal.ts) on 2-row straights and 3-column bends; `lapOf` lists every cell of the lap; `TRACK_MIN_ROWS` 10, `TRACK_ROWS` 12. While cards run the pane keeps `TRACK_ROWS + 1` rows for it, but only if the card list still gets `LIST_MIN_ROWS` (8): the cards come first.
+- Playground polish (v0.17.1, WALK-227, Epic WALK-226 'WALK-E5'): `lapOf` keeps runners off the rim (straights from column 2 to W-5, bends on columns 1 and W-4 between the straights); a stop mark goes behind the runner when ahead is the rim, a fail mark on the fallen runner's lower row; tags are centred in the infield.
 - Process (2026-10-18): open cards with `symphony-workflow start KEY` (In Progress, `.worktrees/`), PRs with `pr KEY` (In Review), close with `land KEY` (Done). Up to WALK-184 cards were made by hand and jumped Backlog -> Done, so the board never showed work in progress.

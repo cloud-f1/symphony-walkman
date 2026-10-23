@@ -103,3 +103,40 @@ test('no two runners on one track share a colour, and the set of cards keeps its
   assert.equal(new Set(trackTones([...keys, 'A-3', 'A-4']).values()).size, CARD_TONES.length) // beyond that they repeat
   assert.deepEqual([...trackTones([...keys].reverse())].sort(), [...tones].sort())
 })
+
+test('no runner ever covers the rim: the lap stays clear of the slanted corners and the side walls', () => {
+  const W = 40
+  const H = 12
+  const empty = playground([row('E-1')], 0, W, H).map((l) => l.left.map((s) => s.text).join(''))
+  const rimCells: [number, number][] = []
+  empty.forEach((line, y) => [...line].forEach((ch, x) => { if (/[╭╮╰╯─│╱╲]/.test(ch) && !(y >= 3 && y <= H - 4 && x >= 5 && x <= W - 6)) rimCells.push([x, y]) }))
+  for (let pos = 0; pos < lapLength(W, H); pos++) {
+    for (const k of ['E-1', 'E-2', 'E-3', 'E-4', 'E-5']) {
+      for (const light of ['walking', 'waiting', 'failed'] as const) {
+        const r = runnerOf(row(k), 0, W, H)
+        const drawn = playground([row(k, { light, sinceMs: (pos * 1000) / r.speed })], (pos * 1000) / r.speed, W, H).map((l) => l.left.map((s) => s.text).join(''))
+        for (const [x, y] of rimCells) assert.equal([...(drawn[y] as string)][x], [...(empty[y] as string)][x], `${k} ${light} at ${pos} covers the rim at ${x},${y}`)
+      }
+    }
+  }
+})
+
+test('the passing frame has legs apart too: no frame is a single-column pole', () => {
+  for (const k of ['P-1', 'P-2', 'P-3', 'P-4']) {
+    for (const t of [0, 300]) {
+      const g = runnerOf(row(k), t, 40, 12).glyph
+      const legs = g[1] as string
+      assert.ok([...legs].filter((c) => c !== ' ').length >= 2, `${k} at ${t}: legs ${JSON.stringify(legs)} are one column`)
+    }
+  }
+})
+
+test('the name tags sit in the middle of the infield, not stuck to its top', () => {
+  const lines = playground([row('C-1'), row('C-2')], 0, 40, 14).map((l) => l.left.map((s) => s.text).join(''))
+  const tagRow = lines.findIndex((l) => l.includes('C-1'))
+  const infieldTop = 3
+  const infieldBottom = 14 - 4
+  const above = tagRow - infieldTop - 1
+  const below = infieldBottom - tagRow - 1
+  assert.ok(Math.abs(above - below) <= 1, `tags at row ${tagRow}: ${above} rows above, ${below} below`)
+})
