@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { HELP, LEGEND, SUBCOMMANDS, diskBar, formatMinutes, plain, progressBar, styleBand, stylePane, styleBoard } from '../core/style.ts'
+import { HELP, LEGEND, SUBCOMMANDS, diskBar, formatMinutes, plain, progressBar, statusTone, styleBand, stylePane, styleBoard } from '../core/style.ts'
 import type { PaneLine } from '../core/style.ts'
 import { renderBoard } from '../core/board.ts'
 import type { CardRow } from '../core/contracts.ts'
@@ -134,6 +134,15 @@ test('the disk meter is solid blocks like the status line (█ fill, ░ track i
   assert.equal(tone(23), 'success')
   assert.equal(tone(84), 'warning')
   assert.equal(tone(95), 'error')
+})
+
+test('a Jira status has its own colour: Done green, In Review and In Progress their own, any other name grey', () => {
+  assert.equal(statusTone('Done'), 'success')
+  assert.equal(statusTone('In Review'), 'card3')
+  assert.equal(statusTone('in progress'), 'card1')
+  assert.equal(statusTone('Backlog'), 'subtle')
+  const lines = stylePane([row({ key: 'CF1-2', light: 'idle', title: 'Second card', jiraStatus: 'In Review' })], { freeGb: 40, usedPct: 23 }, NOW)
+  assert.equal(lines.find((l) => plain(l.left).includes('CF1-2'))?.right?.[0]?.tone, 'card3')
 })
 
 test('pane, all idle: the title, the disk meter on top (htop style), a rule, "all quiet", then the idle cards', () => {

@@ -1,4 +1,4 @@
-# Handover (state at v0.17.2, refreshed 2026-10-23)
+# Handover (state at v0.17.3, refreshed 2026-10-23)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.17.2` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.17.3` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -151,4 +151,5 @@ Docker was removed so nothing remains there.
 - Terminal playground (v0.17.0, WALK-222, Epic WALK-221 'WALK-E4'): runners are 3 x 2 half-block figures (`sprite` from core/signal.ts) on 2-row straights and 3-column bends; `lapOf` lists every cell of the lap; `TRACK_MIN_ROWS` 10, `TRACK_ROWS` 12. While cards run the pane keeps `TRACK_ROWS + 1` rows for it, but only if the card list still gets `LIST_MIN_ROWS` (8): the cards come first.
 - Playground polish (v0.17.1, WALK-227, Epic WALK-226 'WALK-E5'): `lapOf` keeps runners off the rim (straights from column 2 to W-5, bends on columns 1 and W-4 between the straights); a stop mark goes behind the runner when ahead is the rim, a fail mark on the fallen runner's lower row; tags are centred in the infield.
 - Background shell (v0.17.2, WALK-232, Epic WALK-231 'WALK-E6'): Claude Code writes `status: shell` to `~/.claude/sessions/<pid>.json` when a turn is done but a background shell still runs; `STATUS_LIGHT` maps it to walking. Other values than busy, waiting, idle, shell are not known.
+- Status colours (v0.17.3, WALK-235, Epic WALK-234 'WALK-E7'): `statusTone` in `core/style.ts` colours the Jira status on idle cards by name (Done success, In Review card3, In Progress card1, else grey). Green, amber and red are kept for walking, needs you and failed. v0.17.2 was merged but its tag and Release were not published when this was written.
 - Process (2026-10-18): open cards with `symphony-workflow start KEY` (In Progress, `.worktrees/`), PRs with `pr KEY` (In Review), close with `land KEY` (Done). Up to WALK-184 cards were made by hand and jumped Backlog -> Done, so the board never showed work in progress.
