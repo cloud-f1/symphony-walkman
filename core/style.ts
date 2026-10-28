@@ -131,6 +131,11 @@ export function diskBar(usedPct: number, cellCount = 8): string {
 // Terminal cells, not characters: Chinese and other full-width characters take two.
 const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/
 // Text from outside (a Jira title, a branch name) is drawn as plain characters: nothing in it may steer the terminal.
+// A Jira status in its own colour, by name. Green, amber and red already mean walking, needs you and failed, so
+// In Progress and In Review take two card colours (blue, purple); Done is the one green; any other name stays grey.
+const STATUS_TONE: Record<string, Tone> = { done: 'success', 'in review': 'card3', 'in progress': 'card1' }
+export const statusTone = (status: string): Tone => STATUS_TONE[plainText(status).toLowerCase()] ?? 'subtle'
+
 export const plainText = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').trim()
 export const cells = (text: string): number => [...text].reduce((n, c) => n + (WIDE.test(c) ? 2 : 1), 0)
 export function clipCells(text: string, max: number): string {
@@ -229,7 +234,7 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
   for (const r of rows.filter((x) => x.light === 'idle').sort((x, y) => x.key.localeCompare(y.key))) {
     const status = r.jiraStatus ? plainText(r.jiraStatus) : ''
     const room = Math.max(6, width - 2 - r.key.length - 2 - (status ? cells(status) + 1 : 0))
-    items.push({ lines: [{ left: [{ text: SYMBOL.idle + ' ' + r.key, tone: 'subtle', bold: true }, { text: '  ' + clipCells(title(r), room), tone: 'subtle' }], ...(status ? { right: [{ text: status, tone: 'subtle' as const }] } : {}) }], counted: true })
+    items.push({ lines: [{ left: [{ text: SYMBOL.idle + ' ' + r.key, tone: 'subtle', bold: true }, { text: '  ' + clipCells(title(r), room), tone: 'subtle' }], ...(status ? { right: [{ text: status, tone: statusTone(status) }] } : {}) }], counted: true })
   }
   others.slice(0, OTHERS_MAX).forEach((i, n) => {
     const line: PaneLine = { left: [{ text: '  ' + i.key, bold: true }, { text: '  ' + clipCells(plainText(i.summary), Math.max(6, width - 2 - i.key.length - 2)), tone: 'subtle' }] }
