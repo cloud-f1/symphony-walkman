@@ -52,6 +52,11 @@ test('live sessions light their worktree: busy runs, waiting needs you; dead, id
   assert.equal(lights.has('/r/.claude/worktrees/c'), false)
 })
 
+test('a finished turn with a background shell still running lights its worktree as running', () => {
+  const lights = otherSessionLights([rec({ pid: 1, sessionId: 'x', cwd: '/r/.claude/worktrees/a', status: 'shell', since: 7 })], new Set([1]), ['/r/.claude/worktrees/a'], undefined)
+  assert.deepEqual(lights.get('/r/.claude/worktrees/a'), { light: 'walking', sinceMs: 7 })
+})
+
 test('two sessions in one worktree: needs-you wins over running', () => {
   const lights = otherSessionLights([rec({ pid: 1, sessionId: 'x', status: 'busy' }), rec({ pid: 2, sessionId: 'y', status: 'waiting', since: 5 })], new Set([1, 2]), ['/r/.claude/worktrees/a'], undefined)
   assert.equal(lights.get('/r/.claude/worktrees/a')?.light, 'waiting')

@@ -64,9 +64,10 @@ export function parseTasklist(out: string): Set<number> {
   return live
 }
 
-const STATUS_LIGHT: Record<string, Light> = { busy: 'walking', waiting: 'waiting' }
+// `shell` is a finished turn with a background shell still running (a gate, a build): the card is still moving.
+const STATUS_LIGHT: Record<string, Light> = { busy: 'walking', shell: 'walking', waiting: 'waiting' }
 
-// The lights other live sessions give their worktrees: busy is running, waiting needs you; idle gives none.
+// The lights other live sessions give their worktrees: busy and shell are running, waiting needs you; idle gives none.
 // This session's own record is left out (its own signals are finer), and needs-you wins in a shared worktree.
 export function otherSessionLights(records: readonly SessionRecord[], alive: ReadonlySet<number>, worktrees: readonly string[], ownSessionId: string | undefined): Map<string, { light: Light; sinceMs: number }> {
   const out = new Map<string, { light: Light; sinceMs: number }>()
