@@ -142,15 +142,31 @@ test('a Jira status has its own colour: Done green, In Review and In Progress th
   assert.equal(statusTone('in progress'), 'card1')
   assert.equal(statusTone('Backlog'), 'subtle')
   const lines = stylePane([row({ key: 'CF1-2', light: 'idle', title: 'Second card', jiraStatus: 'In Review' })], { freeGb: 40, usedPct: 23 }, NOW)
-  assert.equal(lines.find((l) => plain(l.left).includes('CF1-2'))?.right?.[0]?.tone, 'card3')
+  const idle = lines.find((l) => plain(l.left).includes('CF1-2'))
+  assert.equal(idle?.left.find((seg) => seg.text.startsWith('In Review'))?.tone, 'card3') // the status is the first piece after the marker
+})
+
+test('idle cards: the status comes first in a column, so the keys and titles line up', () => {
+  const t = paneText(stylePane([
+    row({ key: 'CAN-7', light: 'idle', title: 'Railway', jiraStatus: 'Done' }),
+    row({ key: 'CAN-292', light: 'idle', title: 'Journeys', jiraStatus: 'In Progress' }),
+    row({ key: 'CAN-9', light: 'idle', title: 'No status yet' }),
+  ], { freeGb: 40, usedPct: 23 }, NOW))
+  const lines = t.filter((l) => l.startsWith('○'))
+  assert.equal(lines.length, 3, t.join('\n'))
+  const of = (key: string) => lines.find((l) => l.includes(key)) as string
+  assert.ok(of('CAN-7 ').startsWith('○ Done        CAN-7    Railway'), of('CAN-7 '))
+  assert.ok(of('CAN-292').startsWith('○ In Progress CAN-292  Journeys'), of('CAN-292'))
+  assert.equal(of('CAN-9').indexOf('CAN-9'), of('CAN-292').indexOf('CAN-292')) // no status: the key stays in its column
+  assert.equal(of('CAN-7 ').indexOf('Railway'), of('CAN-292').indexOf('Journeys'))
 })
 
 test('pane, all idle: the title, the disk meter on top (htop style), a rule, "all quiet", then the idle cards', () => {
   const t = paneText(stylePane([row({ light: 'idle' }), row({ key: 'CF1-2', light: 'idle', title: 'Second card', jiraStatus: 'In Progress' })], { freeGb: 40, usedPct: 23 }, NOW))
   assert.equal(t.length, 6, t.join('\n'))
   // an idle card is listed, not hidden: a card In Progress in Jira with nobody in it must still show (WALK-197)
-  assert.ok(t[4]?.includes('○ CF1-195'), t.join('\n'))
-  assert.ok(t[5]?.includes('○ CF1-2') && t[5]?.includes('Second card') && t[5]?.includes('In Progress'), t.join('\n'))
+  assert.ok(t[4]?.includes('○') && t[4]?.includes('CF1-195'), t.join('\n'))
+  assert.ok(t[5]?.includes('In Progress') && t[5]?.includes('CF1-2') && t[5]?.includes('Second card'), t.join('\n'))
   assert.ok(t[0]?.startsWith('WALKMAN'))
   assert.ok(t[1]?.includes('23%') && t[1]?.includes('40 GB free'))
   assert.ok(/^─+$/.test(t[2] ?? ''))

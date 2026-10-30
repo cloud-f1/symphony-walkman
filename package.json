@@ -1,6 +1,6 @@
 {
   "name": "symphony-walkman",
-  "version": "0.17.6",
+  "version": "0.17.7",
   "private": true,
   "type": "module",
   "description": "Claude Code plugin: a pedestrian-signal board that shows which Jira card Claude is working on.",
