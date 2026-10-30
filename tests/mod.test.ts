@@ -384,6 +384,18 @@ test('pane, quiet: title, all quiet and the disk line only, and no timer runs', 
   expect(s.invalidated.n).toBe(before) // nothing runs or waits: no timer redraws the pane
 })
 
+test('the time in a light keeps counting through a second turn; it restarts when the light changes', async ($, on) => {
+  const s = stubs(on)
+  await walkman($, 'board print')
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await s.clock.advance(5 * 60_000)
+  await $.turn.start({ text: 'more', turnId: 't2' }) // still walking: the clock is not reset
+  expect(flat(await paneOf($))).toMatch(/"5m"/)
+  await $.turn.complete({ turnId: 't2', reason: 'stop' } as any)
+  await $.turn.start({ text: 'again', turnId: 't3' }) // the light went quiet in between: a new run
+  expect(flat(await paneOf($))).not.toMatch(/"5m"/)
+})
+
 test('pane, a permission ask: an amber needs-you card with its reason, a toast once, and a timer while it waits', async ($, on) => {
   const s = stubs(on)
   on('tool.check', () => ({ decision: 'ask' }))
