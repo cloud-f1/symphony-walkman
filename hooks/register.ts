@@ -532,10 +532,15 @@ async function mark($: Engine, patch: Partial<Omit<Live, 'sinceMs'>>, keepTime =
     const cwd = await $.session.cwd()
     const top = await $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd, timeoutMs: 1500 })
     const path = top.exitCode === 0 ? top.stdout.trim() : cwd
-    const prev = live.get(path) ?? { isWorking: false, askPending: false, lastTurnFailed: false, sinceMs: 0 }
+    const had = live.get(path)
+    const prev = had ?? { isWorking: false, askPending: false, lastTurnFailed: false, sinceMs: 0 }
     const now = await $.clock.now()
     currentTree = path
-    live.set(path, { ...prev, ...patch, sinceMs: keepTime && prev.sinceMs ? prev.sinceMs : now })
+    const next = { ...prev, ...patch }
+    // The clock is the time in a light: it restarts only when the light changes, so a second turn or a cleared ask
+    // inside one run keeps counting (the number stayed 0 while subagents had run 14 minutes).
+    const sameLight = deriveLight(prev) === deriveLight(next)
+    live.set(path, { ...next, sinceMs: had && (keepTime || sameLight) ? prev.sinceMs : now })
     // A session is in one worktree at a time: a worktree it has left is no longer running, asking or failed
     // (an ask left there unanswered stayed red for a day, WALK-148).
     for (const [other, sig] of live) if (other !== path && (sig.isWorking || sig.askPending || sig.lastTurnFailed)) live.set(other, { isWorking: false, askPending: false, lastTurnFailed: false, sinceMs: now })
