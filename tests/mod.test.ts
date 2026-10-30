@@ -396,6 +396,12 @@ test('the time in a light keeps counting through a second turn; it restarts when
   expect(flat(await paneOf($))).not.toMatch(/"5m"/)
 })
 
+test('pane: two worktrees on one card list the card once', async ($, on) => {
+  stubs(on, { porcelain: PORCELAIN + '\nworktree /r/.claude/worktrees/b\nHEAD 123\nbranch refs/heads/CF1-195-second-try\n' })
+  const j = flat(await paneOf($))
+  expect(j.split('CF1-195').length - 1).toBe(1)
+})
+
 test('pane, a permission ask: an amber needs-you card with its reason, a toast once, and a timer while it waits', async ($, on) => {
   const s = stubs(on)
   on('tool.check', () => ({ decision: 'ask' }))
