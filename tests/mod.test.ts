@@ -916,7 +916,8 @@ test('the pane lists an idle card instead of hiding it', async ($, on) => {
   await walkman($, '')
   const pane = flat(await paneOf($, { columns: 44, rows: 40 }))
   expect(pane).toContain('all quiet')
-  expect(pane).toContain('○ CF1-195')
+  expect(pane).toContain('○ ')
+  expect(pane).toContain('CF1-195')
 })
 
 // ---------- 0.15.0: an answered ask clears (the prompt runs inside tool.call) ----------

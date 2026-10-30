@@ -230,11 +230,16 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
   } else if (count('done') > 0) {
     items.push({ lines: [{ left: [{ text: `✓ ${count('done')} done`, tone: 'subtle' }] }] })
   }
-  // idle cards, one line each with their Jira status: a card In Progress with nobody in it must not vanish (WALK-197)
-  for (const r of rows.filter((x) => x.light === 'idle').sort((x, y) => x.key.localeCompare(y.key))) {
-    const status = r.jiraStatus ? plainText(r.jiraStatus) : ''
-    const room = Math.max(6, width - 2 - r.key.length - 2 - (status ? cells(status) + 1 : 0))
-    items.push({ lines: [{ left: [{ text: SYMBOL.idle + ' ' + r.key, tone: 'subtle', bold: true }, { text: '  ' + clipCells(title(r), room), tone: 'subtle' }], ...(status ? { right: [{ text: status, tone: statusTone(status) }] } : {}) }], counted: true })
+  // idle cards, one line each: the Jira status first, in a column as wide as the longest one so the keys and titles
+  // line up. A card In Progress with nobody in it must not vanish (WALK-197).
+  const idle = rows.filter((x) => x.light === 'idle').sort((x, y) => x.key.localeCompare(y.key))
+  const statusOf = (r: CardRow) => (r.jiraStatus ? plainText(r.jiraStatus) : '')
+  const statusW = Math.max(0, ...idle.map((r) => cells(statusOf(r))))
+  const keyW = Math.max(0, ...idle.map((r) => r.key.length))
+  for (const r of idle) {
+    const status = statusOf(r)
+    const room = Math.max(6, width - 2 - (statusW > 0 ? statusW + 1 : 0) - keyW - 2)
+    items.push({ lines: [{ left: [{ text: SYMBOL.idle + ' ', tone: 'subtle' }, ...(statusW > 0 ? [{ text: status + ' '.repeat(statusW - cells(status) + 1), tone: statusTone(status) }] : []), { text: r.key.padEnd(keyW), tone: 'subtle', bold: true }, { text: '  ' + clipCells(title(r), room), tone: 'subtle' }] }], counted: true })
   }
   others.slice(0, OTHERS_MAX).forEach((i, n) => {
     const line: PaneLine = { left: [{ text: '  ' + i.key, bold: true }, { text: '  ' + clipCells(plainText(i.summary), Math.max(6, width - 2 - i.key.length - 2)), tone: 'subtle' }] }
