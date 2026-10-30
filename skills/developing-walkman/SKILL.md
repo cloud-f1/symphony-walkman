@@ -16,7 +16,7 @@ A native Claude Code Mod (TypeScript, no build step, no runtime dependencies) th
 node --experimental-strip-types --test checks/*.check.ts      # pure core checks (Node >= 22.6; the flag is needed below 22.18)
 claude plugin test                 # Mod tests on a stubbed host (Claude Code 2.1.287+)
 claude plugin validate --strict .  # manifests + Mod static analysis
-npm test                           # both of the first two
+pnpm test                          # both of the first two
 ```
 
 Core checks live in `checks/*.check.ts` on purpose: `claude plugin test` loads every `*.test.ts` and refuses `node:test` imports.
@@ -38,7 +38,7 @@ Core checks live in `checks/*.check.ts` on purpose: `claude plugin test` loads e
 ## Releasing
 
 - Any user-visible change bumps `version` in `.claude-plugin/plugin.json` and `package.json` together (`checks/release.check.ts` enforces it). Without a new version string, installed copies never update.
-- Ship a version only with `npm run release` on an up-to-date `main` after the merge: it runs the gate and the audit (`npm run release:check` shows the report without writing) and only then tags, pushes and publishes the GitHub Release. Never tag by hand, and never weaken a gate to make it pass. Each release needs a README "What is verified" row for its version, written before the merge.
+- Ship a version only with `pnpm run release` on an up-to-date `main` after the merge: it runs the gate and the audit (`pnpm run release:check` shows the report without writing) and only then tags, pushes and publishes the GitHub Release. Never tag by hand, and never weaken a gate to make it pass. Each release needs a README "What is verified" row for its version, written before the merge.
 - Auto-update is verified only when an installed copy picks up a later release; say so in the README if that has not been seen yet.
 
 ## Naming
@@ -59,7 +59,7 @@ Core checks live in `checks/*.check.ts` on purpose: `claude plugin test` loads e
 - A fresh Claude Code can show an auto-mode onboarding dialog that swallows the next slash command; send Esc twice before `/walkman debug` in a scripted session.
 - `git worktree add ... origin/main` sets the new branch to track `origin/main`; push with `git push -u origin <branch>` so it tracks its own branch.
 - Two tickets in flight both bump the version and add a README row, so the second one conflicts. Merge in version order, then rebase: keep the higher version and both README rows.
-- The owner lets you merge your own walkman PRs once `npm test`, `claude plugin validate --strict .` and the real-session check pass (2026-10-16); GitHub CI is not required. Other repos and other outward steps still need their go-ahead.
+- The owner lets you merge your own walkman PRs once `pnpm test`, `claude plugin validate --strict .` and the real-session check pass (2026-10-16); GitHub CI is not required. Other repos and other outward steps still need their go-ahead.
 - A credentials file must never be written by a `grep` that colors its output (`--color=always` puts escape bytes in the file and uv then fails to parse it).
 - A `KEY-n` in git history is a guess: `BUG-12`, `HF-1`, `P2-3` are not Jira projects. `configure` applies a guess only when a read-only search finds issues in it; a project that does not exist answers exit 0 and `0 total`, so check the count, not the exit code.
 - The CLI checks must run with the `WALKMAN_*` variables removed from the environment (`cleanEnv()`); a machine that has `WALKMAN_JIRA_PROJECT` set otherwise changes what `doctor` and `setup` report.

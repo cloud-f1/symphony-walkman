@@ -1,12 +1,14 @@
 {
   "name": "symphony-walkman",
-  "version": "0.17.3",
+  "version": "0.17.4",
   "private": true,
   "type": "module",
   "description": "Claude Code plugin: a pedestrian-signal board that shows which Jira card Claude is working on.",
   "license": "MIT",
+  "packageManager": "pnpm@12.15.0",
   "engines": {
-    "node": ">=22.6"
+    "node": ">=22.6",
+    "pnpm": ">=12"
   },
   "scripts": {
     "test": "node --experimental-strip-types --no-warnings --test checks/*.check.ts && claude plugin test",

@@ -1,5 +1,5 @@
-// Release gate. `npm run release:check` runs every gate and the audit and prints a report; nothing is written.
-// `npm run release` runs the same check and, only when every line passed, tags v<version>, pushes the tag and
+// Release gate. `pnpm run release:check` runs every gate and the audit and prints a report; nothing is written.
+// `pnpm run release` runs the same check and, only when every line passed, tags v<version>, pushes the tag and
 // publishes a GitHub Release whose notes are the report. A gate that cannot run counts as failed, never skipped.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs'
@@ -62,9 +62,9 @@ gate(`pin: symphony-workflow ${SW_REF} is a published tag, and the CLI pins the 
   return p
 })
 
-gate('tests: core checks and Mod tests (npm test)', () => {
-  const r = tryRun('npm', ['test'])
-  return r.ok ? [] : ['npm test failed: ' + (r.out.match(/(\d+ fail|# fail \d+|not ok .*)/)?.[0] ?? r.out.trim().split('\n').slice(-3).join(' | '))]
+gate('tests: core checks and Mod tests (pnpm test)', () => {
+  const r = tryRun('pnpm', ['test'])
+  return r.ok ? [] : ['pnpm test failed: ' + (r.out.match(/(\d+ fail|# fail \d+|not ok .*)/)?.[0] ?? r.out.trim().split('\n').slice(-3).join(' | '))]
 })
 
 gate('plugin: claude plugin validate --strict', () => {
@@ -74,7 +74,7 @@ gate('plugin: claude plugin validate --strict', () => {
 
 gate('types: tsc finds no error in core/ and hooks/ (the code that ships)', () => {
   const tsc = join(root, 'node_modules/.bin/tsc')
-  if (!existsSync(tsc)) return ['TypeScript is not installed here: run npm ci']
+  if (!existsSync(tsc)) return ['TypeScript is not installed here: run pnpm install --frozen-lockfile']
   if (!existsSync(join(root, '.claude-plugin/types/claude-code/index.d.ts'))) return ['the Mod API types are missing (.claude-plugin/types): open this repo in Claude Code once so it writes them']
   const r = tryRun(tsc, ['-p', 'tsconfig.plugin.json'])
   const shipped = r.out.split('\n').filter((l) => /^(core|hooks)\//.test(l))
