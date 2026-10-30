@@ -309,14 +309,15 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | Playground polish, 0.17.1 (real session, 130 x 42 terminal, demo mode, 2026-10-23) | Passed: runners on the bends sit next to the side walls and never cover the slanted corners (also checked for every lap position by a check); the passing frame has two legs (`▄█▄` over ` █▄`); a fallen runner reads `✕█▄▄`; the name tags sit in the middle of the infield. From the owner's Ghostty screenshots of 0.17.0 |
 | Background shell, 0.17.2 (real record, 2026-10-29) | Passed: `~/.claude/sessions/<pid>.json` of a course-academy-next session read `status: shell` while its gate ran after the turn ended; the board showed quiet for it. `shell` now lights the worktree as running (a check). Not seen: the pane lighting a card in that session, because its folder is not a card worktree of this repo |
 | Status colours, 0.17.3 (checks only, 2026-10-29) | Passed: a check reads the colour of the status on an idle card (Done green, In Review purple, In Progress blue, other names grey). Not seen: how those colours draw in the owner's Ghostty and Desktop themes |
+| pnpm, 0.17.4 (2026-10-30) | Passed: `pnpm install --frozen-lockfile`, `pnpm test` and `pnpm run release:check` run in a branch worktree from `pnpm-lock.yaml` (imported from the old `package-lock.json`, same versions). Not seen: the GitHub CI run with `pnpm/action-setup` (Actions quota is short) |
 | A worktree the session left keeps no needs-you, 0.7.1 (2026-10-16) | Mod test only: an ask in one worktree, then a turn in another, leaves the first idle. Seen live before the fix (three worktrees red for 24 hours). **Not seen** in a real session after the fix: moving a real session between worktrees was not driven |
 | Windows | **Not run**: no Windows machine. The disk line is skipped there and paths are untested |
 
 ## Develop
 
 ```bash
-npm ci
-npm test            # core checks (node --test, with the strip-types flag) then `claude plugin test`
+pnpm install --frozen-lockfile
+pnpm test            # core checks (node --test, with the strip-types flag) then `claude plugin test`
 claude plugin validate --strict .
 ```
 
@@ -325,8 +326,8 @@ claude plugin validate --strict .
 A version ships only through the release gate:
 
 ```bash
-npm run release:check   # every gate and the audit, a report, nothing written
-npm run release         # the same, then (only if all passed) tag vX.Y.Z, push it, publish a GitHub Release with the report
+pnpm run release:check  # every gate and the audit, a report, nothing written
+pnpm run release        # the same, then (only if all passed) tag vX.Y.Z, push it, publish a GitHub Release with the report
 ```
 
 | Gate | Fails when |
@@ -334,7 +335,7 @@ npm run release         # the same, then (only if all passed) tag vX.Y.Z, push i
 | git | not on `main`, a tracked file is changed, or `HEAD` is not `origin/main` |
 | version | the version is already tagged, or `plugin.json`, `package.json`, `core/version.ts` and `marketplace.json` disagree |
 | pin | the pinned symphony-workflow release is not a published tag, or the setup CLI pins another one |
-| tests | `npm test` fails (core checks and Mod tests) |
+| tests | `pnpm test` fails (core checks and Mod tests) |
 | plugin | `claude plugin validate --strict .` fails |
 | types | `tsc` reports an error in `core/` or `hooks/`, or TypeScript or the Mod API types are missing |
 | audit: read only | the Mod runs any symphony-workflow command other than `search` and `call search_issues` |
