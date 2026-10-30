@@ -2,7 +2,7 @@
 // every decision lives in ../core (pure, testable without a session). Read only: it never writes
 // to Jira, to symphony-workflow's run files, or to any repo.
 import type { EngineInterface as Engine, On, PluginOptions, RenderElement } from 'claude-code' // types only; erased at run time
-import { cardFromBranch, parseWorktrees } from '../core/card.ts'
+import { cardFromBranch, onePerCard, parseWorktrees } from '../core/card.ts'
 import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf, parsePsDrive } from '../core/disk.ts'
 import { renderBoard } from '../core/board.ts'
@@ -507,6 +507,7 @@ async function load($: Engine, now: number): Promise<void> {
       r.sinceMs = other.sinceMs || r.sinceMs
     }
   }
+  rows.splice(0, rows.length, ...onePerCard(rows, [currentTree, lent])) // two worktrees on one card are one card
   const agents = await subagents($, now)
   const home = rows.find((r) => r.worktree === currentTree) ?? rows.find((r) => r.worktree === lent)
   if (home && agents.length > 0) home.agents = agents

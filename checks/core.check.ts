@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cardFromBranch, parseWorktrees } from '../core/card.ts'
+import { cardFromBranch, onePerCard, parseWorktrees } from '../core/card.ts'
 import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf } from '../core/disk.ts'
 import { formatElapsed, renderBand, renderBoard, summary } from '../core/board.ts'
@@ -8,6 +8,17 @@ import { signalSvg } from '../core/svg.ts'
 import type { CardRow } from '../core/contracts.ts'
 
 const row = (over: Partial<CardRow>): CardRow => ({ key: 'CF1-1', slug: 's', branch: 'CF1-1-s', worktree: '/w', light: 'walking', sinceMs: 0, ...over })
+
+test('a card with two worktrees is one row: the most active light wins, then the session home, then the first', () => {
+  const a = row({ key: 'CAN-292', worktree: '/w/a', light: 'idle' })
+  const b = row({ key: 'CAN-292', worktree: '/w/b', light: 'walking' })
+  const c = row({ key: 'CAN-297', worktree: '/w/c', light: 'idle' })
+  const d = row({ key: 'CAN-297', worktree: '/w/d', light: 'idle' })
+  assert.deepEqual(onePerCard([a, b, c, d], []), [b, c]) // running beats idle; a tie keeps the first
+  assert.deepEqual(onePerCard([a, b, c, d], ['/w/d']), [b, d]) // a tie goes to the worktree the session stands in
+  assert.deepEqual(onePerCard([row({ key: 'X-1', light: 'walking' }), row({ key: 'X-1', worktree: '/w/2', light: 'waiting' })], ['/w']).map((r) => r.light), ['waiting']) // needs you beats the home worktree
+  assert.equal(onePerCard([], []).length, 0)
+})
 
 test('card from branch: key, slug, and non-card branches', () => {
   assert.deepEqual(cardFromBranch('CF1-195-devopsday-visuals', '/w'), { key: 'CF1-195', slug: 'devopsday-visuals', branch: 'CF1-195-devopsday-visuals', worktree: '/w' })

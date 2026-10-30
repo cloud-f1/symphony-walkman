@@ -1,4 +1,4 @@
-# Handover (state at v0.17.5, refreshed 2026-10-23)
+# Handover (state at v0.17.6, refreshed 2026-10-23)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.17.5` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.17.6` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -154,4 +154,5 @@ Docker was removed so nothing remains there.
 - Status colours (v0.17.3, WALK-235, Epic WALK-234 'WALK-E7'): `statusTone` in `core/style.ts` colours the Jira status on idle cards by name (Done success, In Review card3, In Progress card1, else grey). Green, amber and red are kept for walking, needs you and failed. v0.17.2 was merged but its tag and Release were not published when this was written.
 - pnpm (v0.17.4, WALK-238, Epic WALK-237 'WALK-E8'): the repo installs and runs with pnpm 12 (`packageManager` in `package.json`, `pnpm-lock.yaml`; `package-lock.json` is gone). The user-facing `npx --yes github:cloud-f1/symphony-walkman ...` lines stay on npx on purpose: they run for people with no clone.
 - Countdown (v0.17.5, WALK-241, Epic WALK-240 'WALK-E9'): `mark()` keeps `sinceMs` while the derived light is the same, so a second turn or a cleared ask no longer restarts the big number. Open: subagents that outlive a finished turn leave the card idle, which restarts the clock.
+- One row per card (v0.17.6, WALK-244, Epic WALK-243 'WALK-E10'): `onePerCard` in `core/card.ts` keeps one row per card key when a card has several worktrees (most active light, then the session's own worktree). The lost rows are not counted anywhere.
 - Process (2026-10-18): open cards with `symphony-workflow start KEY` (In Progress, `.worktrees/`), PRs with `pr KEY` (In Review), close with `land KEY` (Done). Up to WALK-184 cards were made by hand and jumped Backlog -> Done, so the board never showed work in progress.
