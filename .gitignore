@@ -15,3 +15,6 @@ node_modules/
 
 # card worktrees made by `symphony-workflow start`
 /.worktrees/
+
+# graphify output (knowledge graph, written into the working tree)
+graphify-out/
