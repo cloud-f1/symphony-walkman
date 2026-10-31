@@ -22,8 +22,11 @@ export function parseSearch(out: string): JiraIssue[] {
 export function buildJql(project: string, cardKeys: readonly string[]): string | undefined {
   if (!PROJECT.test(project)) return undefined
   const keys = [...new Set(cardKeys.filter((k) => KEY.test(k) && k.startsWith(project + '-')))]
-  const own = keys.length > 0 ? ` OR key in (${keys.join(', ')})` : ''
-  return `project = ${project} AND hierarchyLevel = 0 AND (statusCategory = "In Progress"${own}) ORDER BY updated DESC`
+  const inProgress = 'hierarchyLevel = 0 AND statusCategory = "In Progress"'
+  // A card with a worktree may be a Sub-task (hierarchy level -1): the Story-level filter must not hide it, or it
+  // shows no status and the branch name for a title. The key list is validated above, so it may match any level.
+  if (keys.length === 0) return `project = ${project} AND ${inProgress} ORDER BY updated DESC`
+  return `project = ${project} AND (${inProgress} OR key in (${keys.join(', ')})) ORDER BY updated DESC`
 }
 
 // Cards with a worktree get their title and Jira status; the rest are Jira-only rows.
