@@ -52,8 +52,9 @@ test('jira: parse the CLI output, build a safe JQL, merge titles and Jira-only r
   assert.deepEqual(issues.map((i) => i.key), ['JEV-48', 'JEV-35'])
   assert.equal(issues[0]?.summary, 'Masking')
   assert.deepEqual(parseSearch('Jira API error 400: nope\n0 total'), [])
-  assert.equal(buildJql('JEV', ['JEV-48', 'CF1-1', 'JEV-48']), 'project = JEV AND hierarchyLevel = 0 AND (statusCategory = "In Progress" OR key in (JEV-48)) ORDER BY updated DESC')
-  assert.equal(buildJql('JEV', []), 'project = JEV AND hierarchyLevel = 0 AND (statusCategory = "In Progress") ORDER BY updated DESC')
+  // a worktree card may be a Sub-task: its key matches at any level, only In Progress is limited to Stories
+  assert.equal(buildJql('JEV', ['JEV-48', 'CF1-1', 'JEV-48']), 'project = JEV AND (hierarchyLevel = 0 AND statusCategory = "In Progress" OR key in (JEV-48)) ORDER BY updated DESC')
+  assert.equal(buildJql('JEV', []), 'project = JEV AND hierarchyLevel = 0 AND statusCategory = "In Progress" ORDER BY updated DESC')
   assert.equal(buildJql('jev; DROP', []), undefined)
   assert.equal(buildJql('JEV', ['JEV-1) OR (1=1']).includes('1=1'), false)
   const merged = mergeJira([row({ key: 'JEV-48', slug: 'masking' })], issues)
