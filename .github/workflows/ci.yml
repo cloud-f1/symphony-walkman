@@ -22,7 +22,7 @@ jobs:
       - name: Core checks
         run: node --experimental-strip-types --test checks/*.check.ts
       - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code
+        run: npm install -g @anthropic-ai/claude-code@2.1.314
       - name: Mod tests (stubbed host)
         run: claude plugin test
       - name: Validate the plugin
