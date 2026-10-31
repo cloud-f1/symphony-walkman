@@ -148,6 +148,7 @@ test('a Jira status has its own colour: Done green, In Review and In Progress th
 })
 
 test('idle cards: the status comes first in a column, so the keys and titles line up', () => {
+  assert.equal(statusTone('worktree'), 'subtle') // the fallback word is grey, never a status colour
   const t = paneText(stylePane([
     row({ key: 'CAN-7', light: 'idle', title: 'Railway', jiraStatus: 'Done' }),
     row({ key: 'CAN-292', light: 'idle', title: 'Journeys', jiraStatus: 'In Progress' }),
@@ -158,7 +159,8 @@ test('idle cards: the status comes first in a column, so the keys and titles lin
   const of = (key: string) => lines.find((l) => l.includes(key)) as string
   assert.ok(of('CAN-7 ').startsWith('○ Done        CAN-7    Railway'), of('CAN-7 '))
   assert.ok(of('CAN-292').startsWith('○ In Progress CAN-292  Journeys'), of('CAN-292'))
-  assert.equal(of('CAN-9').indexOf('CAN-9'), of('CAN-292').indexOf('CAN-292')) // no status: the key stays in its column
+  assert.ok(of('CAN-9').startsWith('○ worktree    CAN-9    No status yet'), of('CAN-9')) // no status: it says why the row is there
+  assert.equal(of('CAN-9').indexOf('CAN-9'), of('CAN-292').indexOf('CAN-292'))
   assert.equal(of('CAN-7 ').indexOf('Railway'), of('CAN-292').indexOf('Journeys'))
 })
 

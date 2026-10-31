@@ -233,7 +233,8 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
   // idle cards, one line each: the Jira status first, in a column as wide as the longest one so the keys and titles
   // line up. A card In Progress with nobody in it must not vanish (WALK-197).
   const idle = rows.filter((x) => x.light === 'idle').sort((x, y) => x.key.localeCompare(y.key))
-  const statusOf = (r: CardRow) => (r.jiraStatus ? plainText(r.jiraStatus) : '')
+  // no Jira status (not read yet, no credentials, or the key is not found): say the row is here because of its worktree
+  const statusOf = (r: CardRow) => (r.jiraStatus ? plainText(r.jiraStatus) : 'worktree')
   const statusW = Math.max(0, ...idle.map((r) => cells(statusOf(r))))
   const keyW = Math.max(0, ...idle.map((r) => r.key.length))
   for (const r of idle) {

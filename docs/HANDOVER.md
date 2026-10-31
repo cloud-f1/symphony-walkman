@@ -1,4 +1,4 @@
-# Handover (state at v0.17.8, refreshed 2026-10-23)
+# Handover (state at v0.17.9, refreshed 2026-10-23)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.17.8` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.17.9` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -157,4 +157,5 @@ Docker was removed so nothing remains there.
 - One row per card (v0.17.6, WALK-244, Epic WALK-243 'WALK-E10'): `onePerCard` in `core/card.ts` keeps one row per card key when a card has several worktrees (most active light, then the session's own worktree). The lost rows are not counted anywhere.
 - Status first (v0.17.7, WALK-247, Epic WALK-246 'WALK-E11'): the idle rows in `stylePane` are `○ <status column> <key column>  <title>`; the status column is as wide as the longest status, the key column as wide as the longest key, the status is coloured by `statusTone`. The status no longer sits at the right edge. The IN JIRA rows (cards with no worktree) still show no status.
 - Sub-task cards (v0.17.8, WALK-252, Epic WALK-249 'WALK-E12'): `buildJql` limits In Progress to Story level but lets the worktree keys match at any level, so a card that is a Jira Sub-task gets its title and status. `graphify-out/` is in `.gitignore` (WALK-250). `core/jiraboard.ts` and the CLI's lookup query keep their Story-level filter on purpose.
+- Worktree label (v0.17.9, WALK-255, Epic WALK-254 'WALK-E13'): an idle card with no Jira status (lookup not read yet, no credentials, key not found) shows `worktree` in the status column instead of a blank. Releases run from this session itself since 2026-10-31 (`Bash(pnpm run release)` is allowed in the project's `.claude/settings.local.json`).
 - Process (2026-10-18): open cards with `symphony-workflow start KEY` (In Progress, `.worktrees/`), PRs with `pr KEY` (In Review), close with `land KEY` (Done). Up to WALK-184 cards were made by hand and jumped Backlog -> Done, so the board never showed work in progress.
