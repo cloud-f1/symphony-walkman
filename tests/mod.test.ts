@@ -445,10 +445,19 @@ test('pane, a running card is one line with its time in minutes', async ($, on) 
   expect(j).not.toMatch(/\d:\d\d/)
 })
 
-test('on the terminal a running card redraws about every 30 seconds, not every second', async ($, on) => {
+test('a pane that is drawn counts as open: its runners tick at runner speed without /walkman', async ($, on) => {
   const s = stubs(on)
   await $.turn.start({ text: 'go', turnId: 't1' })
-  await paneOf($) // the first read starts the timer
+  await paneOf($) // a pane that came back after /restart: nobody ran /walkman in this process
+  const before = s.invalidated.n
+  await s.clock.advance(1_000)
+  expect(s.invalidated.n - before).toBeGreaterThanOrEqual(3) // about 4 a second, not once in 30 seconds
+})
+
+test('with no pane drawn, a running card redraws the band about every 30 seconds, not every second', async ($, on) => {
+  const s = stubs(on)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await ($ as any).ui.render({ surface: 'terminal', component: 'AbovePrompt', props: {} }) // the first read starts the timer
   const before = s.invalidated.n
   await s.clock.advance(5_000)
   expect(s.invalidated.n).toBe(before)
