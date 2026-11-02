@@ -2,7 +2,7 @@
 // every decision lives in ../core (pure, testable without a session). Read only: it never writes
 // to Jira, to symphony-workflow's run files, or to any repo.
 import type { EngineInterface as Engine, On, PluginOptions, RenderElement } from 'claude-code' // types only; erased at run time
-import { cardFromBranch, lightWhileWorking, onePerCard, parseWorktrees } from '../core/card.ts'
+import { cardFromBranch, lightWhileWorking, onePerCard, parseWorktrees, sinceWithWork } from '../core/card.ts'
 import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf, parsePsDrive } from '../core/disk.ts'
 import { renderBoard } from '../core/board.ts'
@@ -518,6 +518,7 @@ async function load($: Engine, now: number): Promise<void> {
   const home = rows.find((r) => r.worktree === currentTree) ?? rows.find((r) => r.worktree === lent)
   if (home && agents.length > 0) home.agents = agents
   if (home) home.light = lightWhileWorking(home.light, working)
+  if (home && working && home.light === 'walking') home.sinceMs = sinceWithWork(home.sinceMs, { agentsSince: agents.filter((a) => a.light === 'walking').map((a) => a.sinceMs), shellSince: ownShell })
   for (const k of [...seen.keys()]) if (!rows.some((r) => k === `${r.worktree}|${r.light}`)) seen.delete(k)
   cache.rows = rows
   notifyNeedsYou($, rows)

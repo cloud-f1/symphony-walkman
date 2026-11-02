@@ -920,6 +920,18 @@ test('running subagents keep a touched card walking past the ten minute window, 
   expect((await walkman($, 'debug')).text).toContain('CF1-195:walking')
 })
 
+test('the number counts from the oldest running subagent, not from the latest turn', async ($, on) => {
+  const s = stubs(on, { agents: [{ id: 'a1', type: 'general-purpose', description: 'verify entry', status: 'running' }] })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await walkman($, 'debug') // the agent is first seen now
+  await $.turn.complete({ turnId: 't1', reason: 'stop' } as any)
+  await s.clock.advance(5 * 60_000)
+  await $.turn.start({ text: 'a task notification', turnId: 't2' }) // a new turn: the light's own clock restarts
+  const j = flat(await paneOf($))
+  expect(j).not.toContain('"<1m"')
+  expect(j).toMatch(/"5m"/)
+})
+
 test("this session's own background shell keeps its card walking after the turn ends", async ($, on) => {
   stubs(on, { dirs: { [SESSIONS]: ['9.json'] }, files: { [SESSIONS]: '', [SESSIONS + '/9.json']: record(9, 'shell', CWD, 'me') }, alive: '9\n' })
   await $.turn.start({ text: 'go', turnId: 't1' })

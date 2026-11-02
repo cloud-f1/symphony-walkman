@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cardFromBranch, lightWhileWorking, onePerCard, parseWorktrees } from '../core/card.ts'
+import { cardFromBranch, lightWhileWorking, onePerCard, parseWorktrees, sinceWithWork } from '../core/card.ts'
 import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf } from '../core/disk.ts'
 import { formatElapsed, renderBand, renderBoard, summary } from '../core/board.ts'
@@ -24,6 +24,14 @@ test('an idle card is walking while its session has work going; every other ligh
   assert.equal(lightWhileWorking('idle', true), 'walking')
   assert.equal(lightWhileWorking('idle', false), 'idle')
   for (const l of ['walking', 'waiting', 'failed', 'done'] as const) assert.equal(lightWhileWorking(l, true), l)
+})
+
+test('the time counts from the oldest work going: running subagents and a background shell, never later than the light itself', () => {
+  assert.equal(sinceWithWork(1000, { agentsSince: [] }), 1000) // nothing running: the light's own clock
+  assert.equal(sinceWithWork(1000, { agentsSince: [300, 700] }), 300) // the oldest subagent
+  assert.equal(sinceWithWork(1000, { agentsSince: [], shellSince: 500 }), 500) // a background shell
+  assert.equal(sinceWithWork(1000, { agentsSince: [900], shellSince: 0 }), 900) // a shell with no known start is ignored
+  assert.equal(sinceWithWork(200, { agentsSince: [900] }), 200) // work that began after the light does not move it later
 })
 
 test('card from branch: key, slug, and non-card branches', () => {
