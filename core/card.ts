@@ -28,6 +28,14 @@ export function parseWorktrees(porcelain: string): Array<{ path: string; branch:
 // so its runner, its timer and its light do not stop and restart every time the model finishes a turn.
 export const lightWhileWorking = (light: Light, working: boolean): Light => (working && light === 'idle' ? 'walking' : light)
 
+// While a session's subagents or its background shell run, the card counts from the oldest of them: a new turn (a task
+// notification, a queued message) restarts the light's own clock, but not the work that was already going. A shell
+// that began at 0 has no known start and is ignored.
+export function sinceWithWork(sinceMs: number, work: { agentsSince: readonly number[]; shellSince?: number }): number {
+  const starts = [...work.agentsSince, ...(work.shellSince !== undefined && work.shellSince > 0 ? [work.shellSince] : [])]
+  return Math.min(sinceMs, ...starts)
+}
+
 // A card with two worktrees (a rework beside the first try) is one card: keep one row per key. The most active light
 // wins (needs you, failed, running, done, idle), then a worktree the session itself stands in, then the first listed.
 const WEIGHT: Record<Light, number> = { waiting: 4, failed: 3, walking: 2, done: 1, idle: 0 }
