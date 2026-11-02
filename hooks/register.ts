@@ -2,7 +2,7 @@
 // every decision lives in ../core (pure, testable without a session). Read only: it never writes
 // to Jira, to symphony-workflow's run files, or to any repo.
 import type { EngineInterface as Engine, On, PluginOptions, RenderElement } from 'claude-code' // types only; erased at run time
-import { cardFromBranch, onePerCard, parseWorktrees } from '../core/card.ts'
+import { cardFromBranch, lightWhileWorking, onePerCard, parseWorktrees } from '../core/card.ts'
 import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf, parsePsDrive } from '../core/disk.ts'
 import { renderBoard } from '../core/board.ts'
@@ -20,7 +20,7 @@ import { TRACK_ROWS, playground } from '../core/track.ts'
 import { SCENES, demoRows } from '../core/demo.ts'
 import { touchedWorktree } from '../core/touch.ts'
 import { playgroundSvg } from '../core/tracksvg.ts'
-import { isRecordName, otherSessionLights, parsePs, parseRecord, parseTasklist } from '../core/sessions.ts'
+import { isRecordName, otherSessionLights, ownShellSince, parsePs, parseRecord, parseTasklist } from '../core/sessions.ts'
 import type { SessionRecord } from '../core/sessions.ts'
 import { CARD_CELLS, boardGrid } from '../core/boardgrid.ts'
 import type { CardLight, GridCard } from '../core/boardgrid.ts'
@@ -383,7 +383,9 @@ async function listWorktrees($: Engine): Promise<string | undefined> {
 // <pid>.json files (never the .key files beside them), kept when the pid is alive. Off with
 // WALKMAN_OTHER_SESSIONS=off. The format is Claude Code's internal one: anything unexpected is skipped.
 let othersNote = 'not read' // for /walkman debug
+let ownShell: number | undefined // when this session's background shell began (its record says shell), else undefined
 async function otherSessions($: Engine, worktrees: string[]): Promise<Map<string, { light: Light; sinceMs: number }>> {
+  ownShell = undefined
   try {
     if ((await $.env.get('WALKMAN_OTHER_SESSIONS')) === 'off') {
       othersNote = 'off'
@@ -415,6 +417,7 @@ async function otherSessions($: Engine, worktrees: string[]): Promise<Map<string
     const own = await $.session.id().catch(() => undefined)
     const alive = windows ? parseTasklist(ps.stdout) : parsePs(ps.stdout)
     const lights = otherSessionLights(records, alive, worktrees, own)
+    ownShell = ownShellSince(records, alive, own)
     othersNote = `${records.length} records, ${records.filter((r) => alive.has(r.pid)).length} alive (${records.filter((r) => alive.has(r.pid)).map((r) => r.status).join(' ')}), ${lights.size} lit`
     return lights
   } catch (err) {
@@ -482,9 +485,14 @@ async function load($: Engine, now: number): Promise<void> {
   cache.at = now
   const rows: CardRow[] = []
   const trees = parseWorktrees(out)
+  // other sessions' lights and this session's own work (subagents, a background shell) come first: a session that waits
+  // for them is not idle, and the card it last touched stays lent to it for as long as they run
+  const others = await otherSessions($, trees.filter((wt) => cardFromBranch(wt.branch, wt.path) !== undefined).map((wt) => wt.path))
+  const agents = await subagents($, now)
+  const working = ownShell !== undefined || agents.some((a) => a.light === 'walking')
   // the session's own signals, lent to the card its tool calls work in when the session stands in no card itself
   const inCard = trees.some((wt) => wt.path === currentTree && cardFromBranch(wt.branch, wt.path) !== undefined)
-  const lent = !inCard && touched !== undefined && now - touched.at < TOUCH_MS && now >= touched.at ? touched.path : undefined
+  const lent = !inCard && touched !== undefined && now >= touched.at && (now - touched.at < TOUCH_MS || working) ? touched.path : undefined
   const signalOf = (path: string): Live | undefined => live.get(path) ?? (path === lent ? live.get(currentTree) : undefined)
   for (const wt of trees) {
     const card = cardFromBranch(wt.branch, wt.path)
@@ -497,7 +505,6 @@ async function load($: Engine, now: number): Promise<void> {
     rows.push({ ...card, runState, light, sinceMs: sig?.sinceMs ?? (seen.get(seenKey) as number), ...(light === 'waiting' && sig?.why ? { why: sig.why } : {}), ...(sig?.todo ? { todo: sig.todo } : {}) })
   }
   // other sessions light the cards this session is not working on (its own signals are finer)
-  const others = await otherSessions($, rows.map((r) => r.worktree))
   for (const r of rows) {
     const sig = signalOf(r.worktree)
     const mine = sig && (sig.isWorking || sig.askPending || sig.lastTurnFailed)
@@ -508,9 +515,9 @@ async function load($: Engine, now: number): Promise<void> {
     }
   }
   rows.splice(0, rows.length, ...onePerCard(rows, [currentTree, lent])) // two worktrees on one card are one card
-  const agents = await subagents($, now)
   const home = rows.find((r) => r.worktree === currentTree) ?? rows.find((r) => r.worktree === lent)
   if (home && agents.length > 0) home.agents = agents
+  if (home) home.light = lightWhileWorking(home.light, working)
   for (const k of [...seen.keys()]) if (!rows.some((r) => k === `${r.worktree}|${r.light}`)) seen.delete(k)
   cache.rows = rows
   notifyNeedsYou($, rows)

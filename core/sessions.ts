@@ -65,6 +65,14 @@ export function parseTasklist(out: string): Set<number> {
 }
 
 // `shell` is a finished turn with a background shell still running (a gate, a build): the card is still moving.
+// This session's own record: status `shell` means the turn is done but a background shell (a gate, a build) still runs,
+// so the session is not idle. Returns when that began, or undefined. busy and waiting are the hooks' own signals.
+export function ownShellSince(records: readonly SessionRecord[], alive: ReadonlySet<number>, ownSessionId: string | undefined): number | undefined {
+  if (!ownSessionId) return undefined
+  const r = records.find((x) => x.sessionId === ownSessionId && alive.has(x.pid))
+  return r && r.status === 'shell' ? r.since : undefined
+}
+
 const STATUS_LIGHT: Record<string, Light> = { busy: 'walking', shell: 'walking', waiting: 'waiting' }
 
 // The lights other live sessions give their worktrees: busy and shell are running, waiting needs you; idle gives none.

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cardFromBranch, onePerCard, parseWorktrees } from '../core/card.ts'
+import { cardFromBranch, lightWhileWorking, onePerCard, parseWorktrees } from '../core/card.ts'
 import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf } from '../core/disk.ts'
 import { formatElapsed, renderBand, renderBoard, summary } from '../core/board.ts'
@@ -18,6 +18,12 @@ test('a card with two worktrees is one row: the most active light wins, then the
   assert.deepEqual(onePerCard([a, b, c, d], ['/w/d']), [b, d]) // a tie goes to the worktree the session stands in
   assert.deepEqual(onePerCard([row({ key: 'X-1', light: 'walking' }), row({ key: 'X-1', worktree: '/w/2', light: 'waiting' })], ['/w']).map((r) => r.light), ['waiting']) // needs you beats the home worktree
   assert.equal(onePerCard([], []).length, 0)
+})
+
+test('an idle card is walking while its session has work going; every other light stays as it is', () => {
+  assert.equal(lightWhileWorking('idle', true), 'walking')
+  assert.equal(lightWhileWorking('idle', false), 'idle')
+  for (const l of ['walking', 'waiting', 'failed', 'done'] as const) assert.equal(lightWhileWorking(l, true), l)
 })
 
 test('card from branch: key, slug, and non-card branches', () => {
