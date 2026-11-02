@@ -756,6 +756,12 @@ export function register(on: On, options?: PluginOptions) {
     const elements = $.ui.resolve(e) as Record<string, unknown>
     const { Box, Text, Button } = elements as never as { Box: never; Text: never; Button: never }
     await refresh($)
+    // A pane that is being drawn is open, whoever opened it: a pane that came back after /restart was never opened by
+    // /walkman in this process, and its runners ticked every 30 seconds instead of 4 times a second.
+    if (!paneOpen) {
+      paneOpen = true
+      syncTicker($)
+    }
     const now = await $.clock.now()
     void ensureBoard($, now)
     const linked = isProject((await jiraSettings($).catch(() => ({ project: '' }))).project)
