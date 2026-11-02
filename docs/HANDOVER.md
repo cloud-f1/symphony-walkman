@@ -1,4 +1,4 @@
-# Handover (state at v0.17.10, refreshed 2026-10-23)
+# Handover (state at v0.17.11, refreshed 2026-10-23)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.17.10` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.17.11` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -160,4 +160,5 @@ Docker was removed so nothing remains there.
 - Worktree label (v0.17.9, WALK-255, Epic WALK-254 'WALK-E13'): an idle card with no Jira status (lookup not read yet, no credentials, key not found) shows `worktree` in the status column instead of a blank. Releases run from this session itself since 2026-10-31 (`Bash(pnpm run release)` is allowed in the project's `.claude/settings.local.json`).
 - Repo upkeep (2026-11-01, WALK-258, Epic WALK-257 'WALK-E14'): `@types/node` is on 22.20.5 (the Node 22 line; engines is >=22.6, so TypeScript 7 and @types/node 26 were left alone on purpose) and CI installs Claude Code at a pinned version. **CI cannot run `tsc`**: `.claude-plugin/types/` is gitignored and made only by opening the repo in Claude Code; `claude plugin test` and `validate` do not create it (checked in a fresh clone), so the types gate lives in `pnpm run release` only. A way to have the types in CI (vendoring them) is not decided.
 - Pane open on render (v0.17.10, WALK-261, Epic WALK-260 'WALK-E15'): the Pane render sets `paneOpen`, so a pane restored by /restart ticks at `RUNNER_MS` like one opened by /walkman. WALK-263 (idle card with running subagents or this session's own background shell stays walking) and WALK-265 (the number counts from the oldest running subagent) follow in the same epic.
+- Work between turns (v0.17.11, WALK-263): `lightWhileWorking` (core/card.ts) turns the session's card from idle to walking while it has running subagents or its own session record says `shell` (`ownShellSince`, core/sessions.ts; set by `otherSessions` in register.ts). While that work runs the lent card is kept past `TOUCH_MS`. v0.17.2 lit only OTHER sessions for `shell`. Known risk: a subagent the host lists as running for days (seen once: 42h) would keep its card walking; not capped (item 4 of the 2026-11-02 plan was not approved).
 - Process (2026-10-18): open cards with `symphony-workflow start KEY` (In Progress, `.worktrees/`), PRs with `pr KEY` (In Review), close with `land KEY` (Done). Up to WALK-184 cards were made by hand and jumped Backlog -> Done, so the board never showed work in progress.

@@ -910,6 +910,23 @@ test('a touch goes stale: ten minutes later the card is idle again', async ($, o
   expect((await walkman($, 'debug')).text).toContain('CF1-195:idle')
 })
 
+test('running subagents keep a touched card walking past the ten minute window, and between turns', async ($, on) => {
+  const s = stubs(on, { cwd: ROOT, agents: [{ id: 'a1', type: 'general-purpose', description: 'verify entry', status: 'running' }] })
+  on('tool.call', () => ({ result: {}, text: 'ok' }))
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await ($ as any).tool.call({ tool: 'Read', file_path: '/r/.claude/worktrees/a/README.md' })
+  await $.turn.complete({ turnId: 't1', reason: 'stop' } as any) // the model is done; its subagent is not
+  await s.clock.advance(11 * 60_000)
+  expect((await walkman($, 'debug')).text).toContain('CF1-195:walking')
+})
+
+test("this session's own background shell keeps its card walking after the turn ends", async ($, on) => {
+  stubs(on, { dirs: { [SESSIONS]: ['9.json'] }, files: { [SESSIONS]: '', [SESSIONS + '/9.json']: record(9, 'shell', CWD, 'me') }, alive: '9\n' })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.turn.complete({ turnId: 't1', reason: 'stop' } as any)
+  expect((await walkman($, 'debug')).text).toContain('CF1-195:walking')
+})
+
 test('a session standing in a card keeps its own card, whatever paths its tools name', async ($, on) => {
   stubs(on, { porcelain: PORCELAIN + '\nworktree /r/.claude/worktrees/b\nHEAD 123\nbranch refs/heads/CF1-200-other\n' })
   on('tool.call', () => ({ result: {}, text: 'ok' })) // the tool itself

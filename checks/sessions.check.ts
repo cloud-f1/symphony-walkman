@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { isRecordName, otherSessionLights, parsePs, parseRecord, worktreeOf } from '../core/sessions.ts'
+import { isRecordName, otherSessionLights, ownShellSince, parsePs, parseRecord, worktreeOf } from '../core/sessions.ts'
 import type { SessionRecord } from '../core/sessions.ts'
 
 const rec = (over: Partial<SessionRecord>): SessionRecord => ({ pid: 100, sessionId: 's-1', cwd: '/r/.claude/worktrees/a', status: 'busy', since: 1_000, ...over })
@@ -55,6 +55,16 @@ test('live sessions light their worktree: busy runs, waiting needs you; dead, id
 test('a finished turn with a background shell still running lights its worktree as running', () => {
   const lights = otherSessionLights([rec({ pid: 1, sessionId: 'x', cwd: '/r/.claude/worktrees/a', status: 'shell', since: 7 })], new Set([1]), ['/r/.claude/worktrees/a'], undefined)
   assert.deepEqual(lights.get('/r/.claude/worktrees/a'), { light: 'walking', sinceMs: 7 })
+})
+
+test("this session's own record says shell: a background shell is running; any other status, a dead session or another session's record is not", () => {
+  const own = (over: Partial<SessionRecord>) => rec({ pid: 1, sessionId: 'me', ...over })
+  assert.equal(ownShellSince([own({ status: 'shell', since: 42 })], new Set([1]), 'me'), 42)
+  assert.equal(ownShellSince([own({ status: 'busy' })], new Set([1]), 'me'), undefined) // busy is the hooks' own signal
+  assert.equal(ownShellSince([own({ status: 'idle' })], new Set([1]), 'me'), undefined)
+  assert.equal(ownShellSince([own({ status: 'shell' })], new Set([]), 'me'), undefined) // the session is gone
+  assert.equal(ownShellSince([rec({ pid: 2, sessionId: 'other', status: 'shell' })], new Set([2]), 'me'), undefined)
+  assert.equal(ownShellSince([own({ status: 'shell' })], new Set([1]), undefined), undefined) // no own id: never guess
 })
 
 test('two sessions in one worktree: needs-you wins over running', () => {

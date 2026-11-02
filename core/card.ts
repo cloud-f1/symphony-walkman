@@ -24,6 +24,10 @@ export function parseWorktrees(porcelain: string): Array<{ path: string; branch:
   return out
 }
 
+// Between two turns a session that waits for its subagents or a background shell is not idle: the card keeps walking,
+// so its runner, its timer and its light do not stop and restart every time the model finishes a turn.
+export const lightWhileWorking = (light: Light, working: boolean): Light => (working && light === 'idle' ? 'walking' : light)
+
 // A card with two worktrees (a rework beside the first try) is one card: keep one row per key. The most active light
 // wins (needs you, failed, running, done, idle), then a worktree the session itself stands in, then the first listed.
 const WEIGHT: Record<Light, number> = { waiting: 4, failed: 3, walking: 2, done: 1, idle: 0 }
