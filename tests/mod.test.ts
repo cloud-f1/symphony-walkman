@@ -935,6 +935,18 @@ test('the number counts from the oldest running subagent, not from the latest tu
   expect(j).toMatch(/"5m"/)
 })
 
+test('a subagent listed as running for more than 12 hours stops keeping its card walking', async ($, on) => {
+  const s = stubs(on, { agents: [{ id: 'a1', type: 'general-purpose', description: 'an old one', status: 'running' }] })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await walkman($, 'debug') // the agent is first seen now
+  await $.turn.complete({ turnId: 't1', reason: 'stop' } as any)
+  await s.clock.advance(11 * 3_600_000)
+  expect((await walkman($, 'debug')).text).toContain('CF1-195:walking') // 11 hours: still work going
+  await s.clock.advance(2 * 3_600_000)
+  expect((await walkman($, 'debug')).text).toContain('CF1-195:idle') // 13 hours: a stale entry, not work
+  expect(flat(await paneOf($))).not.toContain('an old one') // an idle card lists no subagents under it
+})
+
 test("this session's own background shell keeps its card walking after the turn ends", async ($, on) => {
   stubs(on, { dirs: { [SESSIONS]: ['9.json'] }, files: { [SESSIONS]: '', [SESSIONS + '/9.json']: record(9, 'shell', CWD, 'me') }, alive: '9\n' })
   await $.turn.start({ text: 'go', turnId: 't1' })

@@ -1,4 +1,4 @@
-# Handover (state at v0.17.13, refreshed 2026-10-23)
+# Handover (state at v0.17.14, refreshed 2026-10-23)
 
 Read this first when picking the project up. The README is for users; this is for whoever works on it next.
 
@@ -14,7 +14,7 @@ pedestrian signal, in the terminal and in Claude Desktop. The plugin is read onl
 |---|---|
 | This repo (public, MIT) | <https://github.com/cloud-f1/symphony-walkman> |
 | Companion repo (public, MIT) | <https://github.com/cloud-f1/symphony-workflow> (CLI, skills plugin `symphony-workflow-ops`) |
-| Releases | tags `v0.1.1` … `v0.17.13` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
+| Releases | tags `v0.1.1` … `v0.17.14` here; `v0.5.0` … `v0.12.0` there (its own `docs/HANDOVER.md` holds its state) |
 | Install | `/plugin marketplace add cloud-f1/symphony-walkman` then `/plugin install symphony-walkman@symphony-walkman` (also installs `symphony-workflow-ops`) |
 | Setup / check a repo | `npx --yes github:cloud-f1/symphony-walkman setup` · `doctor` · `card KEY-n` · `version` |
 | Jira | project **WALK**, Epic WALK-1; the companion's work is Epic ADLC-27 in project ADLC |
@@ -163,4 +163,5 @@ Docker was removed so nothing remains there.
 - Work between turns (v0.17.11, WALK-263): `lightWhileWorking` (core/card.ts) turns the session's card from idle to walking while it has running subagents or its own session record says `shell` (`ownShellSince`, core/sessions.ts; set by `otherSessions` in register.ts). While that work runs the lent card is kept past `TOUCH_MS`. v0.17.2 lit only OTHER sessions for `shell`. Known risk: a subagent the host lists as running for days (seen once: 42h) would keep its card walking; not capped (item 4 of the 2026-11-02 plan was not approved).
 - Number from the oldest work (v0.17.12, WALK-265, closes Epic WALK-260 'WALK-E15'): `sinceWithWork` (core/card.ts) sets the home card's `sinceMs` to the oldest running subagent or the own `shell` start while that work runs, so a new turn no longer restarts the big number. Open: a stale 'running' subagent (not capped) keeps the number at 99 and the card walking.
 - Needs-you without repeats (v0.17.13, WALK-268, Epic WALK-267 'WALK-E16'): `stylePane` skips the lead row (`needs[0] ?? failed[0] ?? running[0]`, the card `leadOf` picks) when it needs you or failed; `signalLines` puts the reason on the box's last line and the time on the state line for a waiting card, and the digits are `text` (white) while waiting or failed. A running lead keeps its row on purpose (its subagents are listed there). The README's cards-view sketch is the real output of `signalLines`, `stylePane` and `playground` for made-up cards at 54 columns (WALK-271); redraw it from the code, not by hand, when the layout changes.
+- Stale subagents (v0.17.14, WALK-276, Epic WALK-273 'WALK-E18'): `agentsAtWork` (core/card.ts) counts only running subagents first seen less than `STALE_AGENT_MS` (12 h, register.ts) ago when lifting an idle card to walking and when `sinceWithWork` picks the number's start. The 12 hours is a guess from one 42 h case; an agent that truly runs longer stops lighting its card. An idle card lists no subagents, so a stale one is not shown at all.
 - Process (2026-10-18): open cards with `symphony-workflow start KEY` (In Progress, `.worktrees/`), PRs with `pr KEY` (In Review), close with `land KEY` (Done). Up to WALK-184 cards were made by hand and jumped Backlog -> Done, so the board never showed work in progress.

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cardFromBranch, lightWhileWorking, onePerCard, parseWorktrees, sinceWithWork } from '../core/card.ts'
+import { agentsAtWork, cardFromBranch, lightWhileWorking, onePerCard, parseWorktrees, sinceWithWork } from '../core/card.ts'
 import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf } from '../core/disk.ts'
 import { formatElapsed, renderBand, renderBoard, summary } from '../core/board.ts'
@@ -32,6 +32,17 @@ test('the time counts from the oldest work going: running subagents and a backgr
   assert.equal(sinceWithWork(1000, { agentsSince: [], shellSince: 500 }), 500) // a background shell
   assert.equal(sinceWithWork(1000, { agentsSince: [900], shellSince: 0 }), 900) // a shell with no known start is ignored
   assert.equal(sinceWithWork(200, { agentsSince: [900] }), 200) // work that began after the light does not move it later
+})
+
+test('a subagent counts as work going only while it is running and younger than the cap', () => {
+  const H = 3_600_000
+  const a = (light: 'walking' | 'done' | 'idle', ageH: number) => ({ light, sinceMs: 100 * H - ageH * H })
+  const fresh = a('walking', 2)
+  const old = a('walking', 42)
+  assert.deepEqual(agentsAtWork([fresh, old, a('done', 1), a('idle', 1)], 100 * H, 12 * H), [fresh])
+  assert.deepEqual(agentsAtWork([a('walking', 11.9)], 100 * H, 12 * H).length, 1)
+  assert.deepEqual(agentsAtWork([a('walking', 12)], 100 * H, 12 * H).length, 0) // the cap itself is already too old
+  assert.deepEqual(agentsAtWork([], 100 * H, 12 * H), [])
 })
 
 test('card from branch: key, slug, and non-card branches', () => {
