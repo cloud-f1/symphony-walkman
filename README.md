@@ -51,45 +51,42 @@ The most urgent card in one line, for example `⚠ WALK-27 needs you 3m (+1)`. O
 
 One pane with two views; `b` (or the button in its header) switches. `/walkman` opens the cards view, `/walkman board` the board view. Its tab title says how many cards need you (`Walkman · 2`).
 
-**Cards view.** Like `htop`, the meters sit on top and the details follow; the details only grow when something needs you:
+**Cards view.** Like `htop`, the meters sit on top and the details follow. The card the pedestrian signal stands for (needs you, then failed, then the longest running) is the box at the top, with its reason when it needs you; the other cards are listed under the meters. The sketch is the real output of the pane's own functions for a made-up set of cards at 54 columns:
 
 ```
-WALKMAN              ⚠ 1  ✕ 0  ● 1  ✓ 3  b: board ▸
-╭────────────────────────────────────────╮
-│     ▄██▄     ▀▀█ █▀█                   │
-│     ▀██▀     █▀▀ █ █                   │
-│    ▄██▄      ▀▀▀ ▀▀▀                   │
-│  ▄▀███▀▀▄  WALK-129                    │
-│▄▀  ███     Real session…               │
-│   ▄█▀▀█▄   walking                     │
-│▄▄▀▀    ▀█  20 steps left               │
-╰────────────────────────────────────────╯
+WALKMAN               ⚠ 1  ✕ 0  ● 1  ✓ 3  b: board ▸
+╭──────────────────────────────────────────────────╮
+│    ▄██▄        ▀▀█                               │
+│    ▀██▀          █                               │
+│   ▄████▄         ▀                               │
+│  ▄▀████▀▄  WALK-128                              │
+│  ▀ ████ ▀  Panel redesign                        │
+│    ██ ██   needs you  7m                         │
+│   ▄██ ██▄  Bash is waiting for your approval     │
+╰──────────────────────────────────────────────────╯
 disk ██░░░░░░  25%  36 GB free
-jira ████░░░░  5 todo  5 doing  98 done         2m
-──────────────────────────────────────────
- NEEDS YOU
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃⚠ WALK-128  Panel redesign…           7m┃
-┃  Bash is waiting for your approval     ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+jira ████░░░░  5 todo  5 doing  98 done           2m
+────────────────────────────────────────────────────
  RUNNING
-╭────────────────────────────────────────╮
-│● WALK-129  Real session…  3/5 ━━─── 12m│
-│  └ ● Explore  find the login flow    2m│
-╰────────────────────────────────────────╯
-✓ 3 done · ○ 1 idle
+╭──────────────────────────────────────────────────╮
+│● WALK-129  Real session                   3/5 12m│
+│  └ ● Explore  find the login flow              2m│
+╰──────────────────────────────────────────────────╯
+✓ 3 done
+○ In Progress WALK-130  Setup CLI speed
 ◌ IN JIRA
-  WALK-27   Per-subagent rows
+  WALK-27  Per-subagent rows
 
-  ╭──────────────────────────────────────╮
- ╱     ▄█▄                   ▄█▄           ╲
-│      █▀█                   ▄▀▄            │
-│▄█▄ ╭────────────────────────────────╮     │
-│▀▄▀ │ WALK-128 ⚠  WALK-129  WALK-130 │     │
-│    ╰────────────────────────────────╯     │
-│                 ▄█▄                       │
- ╲                ▄▀▄                      ╱
-  ╰──────────────────────────────────────╯
+  ╭──────────────────────────────────────────────╮
+ ╱              ⚠▄█▄                              ╲
+│                █▀█                               │
+│    ╭────────────────────────────────────────╮    │
+│    │          WALK-128 ⚠  WALK-129          │    │
+│    │                                        │    │
+│    ╰────────────────────────────────────────╯    │
+│              ▄█▄                                 │
+ ╲             █▀█                                ╱
+  ╰──────────────────────────────────────────────╯
 ```
 
 - **Title row:** how many cards are `⚠` needs you, `✕` failed, `●` running, `✓` done (a zero is dim), and the switch to the board view.
