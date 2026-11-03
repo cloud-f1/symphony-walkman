@@ -28,6 +28,12 @@ export function parseWorktrees(porcelain: string): Array<{ path: string; branch:
 // so its runner, its timer and its light do not stop and restart every time the model finishes a turn.
 export const lightWhileWorking = (light: Light, working: boolean): Light => (working && light === 'idle' ? 'walking' : light)
 
+// The subagents that count as work going: running ones first seen less than `maxAgeMs` ago. The host once kept an old
+// subagent listed as running for 42 hours; it stays in the list but must not keep a card walking for days.
+export function agentsAtWork<T extends { light: Light; sinceMs: number }>(agents: readonly T[], now: number, maxAgeMs: number): T[] {
+  return agents.filter((a) => a.light === 'walking' && now - a.sinceMs < maxAgeMs)
+}
+
 // While a session's subagents or its background shell run, the card counts from the oldest of them: a new turn (a task
 // notification, a queued message) restarts the light's own clock, but not the work that was already going. A shell
 // that began at 0 has no known start and is ignored.

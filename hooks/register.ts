@@ -2,7 +2,7 @@
 // every decision lives in ../core (pure, testable without a session). Read only: it never writes
 // to Jira, to symphony-workflow's run files, or to any repo.
 import type { EngineInterface as Engine, On, PluginOptions, RenderElement } from 'claude-code' // types only; erased at run time
-import { cardFromBranch, lightWhileWorking, onePerCard, parseWorktrees, sinceWithWork } from '../core/card.ts'
+import { agentsAtWork, cardFromBranch, lightWhileWorking, onePerCard, parseWorktrees, sinceWithWork } from '../core/card.ts'
 import { deriveLight, parseRunState } from '../core/lights.ts'
 import { parseDf, parsePsDrive } from '../core/disk.ts'
 import { renderBoard } from '../core/board.ts'
@@ -451,6 +451,7 @@ async function subagents($: Engine, now: number): Promise<AgentRow[]> {
   for (const id of [...agentSeen.keys()]) if (!ids.has(id)) agentSeen.delete(id)
   return rows.sort((a, b) => b.sinceMs - a.sinceMs)
 }
+const STALE_AGENT_MS = 12 * 3_600_000 // a subagent listed as running for longer than this no longer counts as work going
 let currentTree = '' // the worktree this session works in, from the last mark()
 // The card worktree this session's tool calls last named (WALK-197): a session started at the repo root works in a
 // card without ever standing in it. While the session is not in a card itself, its signals light this card.
@@ -489,7 +490,8 @@ async function load($: Engine, now: number): Promise<void> {
   // for them is not idle, and the card it last touched stays lent to it for as long as they run
   const others = await otherSessions($, trees.filter((wt) => cardFromBranch(wt.branch, wt.path) !== undefined).map((wt) => wt.path))
   const agents = await subagents($, now)
-  const working = ownShell !== undefined || agents.some((a) => a.light === 'walking')
+  const atWork = agentsAtWork(agents, now, STALE_AGENT_MS)
+  const working = ownShell !== undefined || atWork.length > 0
   // the session's own signals, lent to the card its tool calls work in when the session stands in no card itself
   const inCard = trees.some((wt) => wt.path === currentTree && cardFromBranch(wt.branch, wt.path) !== undefined)
   const lent = !inCard && touched !== undefined && now >= touched.at && (now - touched.at < TOUCH_MS || working) ? touched.path : undefined
@@ -518,7 +520,7 @@ async function load($: Engine, now: number): Promise<void> {
   const home = rows.find((r) => r.worktree === currentTree) ?? rows.find((r) => r.worktree === lent)
   if (home && agents.length > 0) home.agents = agents
   if (home) home.light = lightWhileWorking(home.light, working)
-  if (home && working && home.light === 'walking') home.sinceMs = sinceWithWork(home.sinceMs, { agentsSince: agents.filter((a) => a.light === 'walking').map((a) => a.sinceMs), shellSince: ownShell })
+  if (home && working && home.light === 'walking') home.sinceMs = sinceWithWork(home.sinceMs, { agentsSince: atWork.map((a) => a.sinceMs), shellSince: ownShell })
   for (const k of [...seen.keys()]) if (!rows.some((r) => k === `${r.worktree}|${r.light}`)) seen.delete(k)
   cache.rows = rows
   notifyNeedsYou($, rows)
