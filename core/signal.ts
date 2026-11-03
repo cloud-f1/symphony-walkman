@@ -1,5 +1,5 @@
 import type { CardRow, Light } from './contracts.ts'
-import { clipCells, formatMinutes, plainText } from './style.ts'
+import { clipCells, formatMinutes, plainText, reasonOf } from './style.ts'
 import type { PaneBox, PaneLine, Seg, Tone } from './style.ts'
 
 // The terminal pedestrian signal (WALK-179): the Taiwan crossing light's green man, drawn from half blocks so every
@@ -108,12 +108,17 @@ export function signalLines(lead: CardRow | undefined, now: number, width: numbe
     const number = signalNumber(lead, now)
     const count = counting ? `${steps} ${steps === 1 ? 'step' : 'steps'} left` : formatMinutes(now - lead.sinceMs)
     const hurry = pace === 'fast' ? ' · hurry' : ''
+    // The digits are amber only beside the green man (the crossing's countdown). When the man, the border and the label
+    // are already amber (needs you) or red (failed) they would melt into them, so they turn plain white.
+    const digitTone: Tone = light === 'waiting' || light === 'failed' ? 'text' : 'warning'
+    // A card that needs you says why in the box (the list below no longer repeats it); the time moves up to the state.
+    const waiting = light === 'waiting'
     text = [
-      ...bigDigits(number).map((d): Seg[] => [{ text: d, tone: 'warning', bold: true }]), // amber, like the light above the man
+      ...bigDigits(number).map((d): Seg[] => [{ text: d, tone: digitTone, bold: true }]),
       [{ text: clipCells(lead.key, room), bold: true }],
       [{ text: clipCells(plainText(lead.title ?? (lead.slug === '' ? lead.branch : lead.slug)), room), tone: 'subtle' }],
-      [{ text: STATE[light], tone: SIGNAL_TONE[light], bold: true }, { text: hurry, tone: SIGNAL_TONE[light] }],
-      [{ text: clipCells(count, room), tone: 'subtle' }],
+      [{ text: STATE[light], tone: SIGNAL_TONE[light], bold: true }, { text: waiting ? '  ' + formatMinutes(now - lead.sinceMs) : hurry, tone: waiting ? 'subtle' : SIGNAL_TONE[light] }],
+      [waiting ? { text: clipCells(reasonOf(lead), room), tone: SIGNAL_TONE[light] } : { text: clipCells(count, room), tone: 'subtle' }],
     ]
   }
   return frame.figure.map((f, i) => ({ left: [{ text: f, tone: frame.tone, bold: true }, { text: '  ' }, ...(text[i] ?? [])], box }))

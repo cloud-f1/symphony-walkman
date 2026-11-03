@@ -127,3 +127,18 @@ test('one countdown number for every surface: steps left while a step list runs,
   // the terminal's big digits show the same number
   assert.deepEqual(signalLines(row({ todo: { done: 1, total: 4 } }), 0, 44).slice(0, 3).map((l) => l.left[2]?.text), bigDigits(3))
 })
+
+test('the digits are white while a card needs you or failed and amber beside the green man; a waiting card says why in the box', () => {
+  const digitTones = (r: CardRow) => signalLines(r, 7 * 60_000, 60).slice(0, 3).map((l) => l.left[2]?.tone)
+  assert.deepEqual(digitTones(row({ light: 'walking' })), ['warning', 'warning', 'warning']) // the crossing's countdown
+  assert.deepEqual(digitTones(row({ light: 'waiting' })), ['text', 'text', 'text']) // not amber on amber
+  assert.deepEqual(digitTones(row({ light: 'failed' })), ['text', 'text', 'text'])
+  // a waiting card: the state line carries the time, the last line the reason (not the minutes), in the state's colour
+  const waiting = signalLines(row({ light: 'waiting', why: 'Bash is waiting for your approval', sinceMs: 0 }), 7 * 60_000, 60)
+  assert.ok(plain(waiting[5]?.left ?? []).includes('needs you') && plain(waiting[5]?.left ?? []).includes('7m'), plain(waiting[5]?.left ?? []))
+  assert.ok(plain(waiting[6]?.left ?? []).includes('Bash is waiting for your approval'), plain(waiting[6]?.left ?? []))
+  assert.equal(waiting[6]?.left[waiting[6]?.left.length - 1]?.tone, 'warning')
+  // a failed or running card keeps the minutes on its last line, and no reason is made up
+  assert.ok(plain(signalLines(row({ light: 'failed' }), 7 * 60_000, 60)[6]?.left ?? []).includes('7m'))
+  assert.ok(plain(signalLines(row({ light: 'walking' }), 7 * 60_000, 60)[6]?.left ?? []).includes('7m'))
+})

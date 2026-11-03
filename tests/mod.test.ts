@@ -369,6 +369,9 @@ test('/walkman doctor says so when the credentials file holds color codes', asyn
 
 const paneOf = ($: any, viewport = { columns: 44, rows: 30 }): Promise<any> => ($ as any).ui.render({ surface: 'terminal', component: 'Pane', requestId: 'walkman-pane', props: {}, viewport })
 
+// the signal box's text column is the pane width minus the figure: 60 columns hold "Bash is waiting for your approval"
+const widePaneOf = ($: any): Promise<any> => ($ as any).ui.render({ surface: 'terminal', component: 'Pane', requestId: 'walkman-pane', props: { bodyColumns: 60 }, viewport: { columns: 60, rows: 30 } })
+
 test('pane, quiet: title, all quiet and the disk line only, and no timer runs', async ($, on) => {
   const s = stubs(on)
   const j = flat(await paneOf($))
@@ -408,10 +411,10 @@ test('pane, a permission ask: an amber needs-you card with its reason, a toast o
   on('tool.call', () => ({ result: {}, text: 'ok' }))
   await walkman($, 'board print') // the first read: nothing waits yet
   await asked($, { tool: 'Bash', command: 'ls' })
-  const j = flat(await paneOf($))
-  expect(j).toContain('NEEDS YOU')
+  const j = flat(await widePaneOf($))
+  expect(j).not.toContain('NEEDS YOU') // the signal box shows the one card that waits: no second copy below it
   expect(j).toContain('"color":"warning"')
-  expect(j).toContain('Bash is waiting for your approval')
+  expect(j.split('Bash is waiting for your approval').length - 1).toBe(1) // the reason, once, in the signal box
   expect(j).not.toContain('"color":"error"')
   await paneOf($)
   expect(s.toasts).toEqual(['CF1-195 needs you'])
@@ -430,7 +433,8 @@ test('pane, a failed turn: a red failed card, not amber', async ($, on) => {
   await $.turn.start({ text: 'go', turnId: 't1' })
   await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'error' })
   const j = flat(await paneOf($))
-  expect(j).toContain('FAILED')
+  expect(j).toContain('failed') // the state in the signal box; the lone failed card is not listed again under a FAILED chip
+  expect(j).not.toContain('FAILED')
   expect(j).toContain('"color":"error"')
   expect(j).not.toContain('NEEDS YOU')
 })
@@ -622,7 +626,7 @@ test('a TodoWrite list puts done/total on the running card, and an ask names the
   await ($ as any).tool.call({ tool: 'TodoWrite', todos: [{ content: 'a', status: 'completed' }, { content: 'b', status: 'in_progress' }, { content: 'c', status: 'pending' }] })
   expect(flat(await paneOf($))).toContain('1/3')
   await asked($, { tool: 'Bash', command: 'export TOKEN=hunter2' })
-  const pane = flat(await paneOf($))
+  const pane = flat(await widePaneOf($))
   expect(pane).toContain('Bash is waiting for your approval')
   expect(pane).not.toContain('hunter2')
 })
@@ -714,9 +718,8 @@ test('a card that needs you is a bold box in amber under an amber chip; running 
   expect(flat(await paneOf($))).toContain('"borderStyle":"round"')
   await asked($, { tool: 'Bash', command: 'ls' })
   const pane = flat(await paneOf($))
-  expect(pane).toContain('"borderStyle":"bold","borderColor":"warning"')
-  expect(pane).toContain('"backgroundColor":"warning"')
-  expect(pane).toContain(' NEEDS YOU ')
+  expect(pane).toContain('"borderStyle":"round","borderColor":"warning"') // the signal box turns amber
+  expect(pane).not.toContain(' NEEDS YOU ') // a lone needs-you card is the signal box, not a second box below it
 })
 
 test('secondary text is dim, and board cards are round Boxes, lit in their tone', async ($, on) => {
