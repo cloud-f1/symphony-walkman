@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { HELP, LEGEND, SUBCOMMANDS, diskBar, formatMinutes, plain, progressBar, statusTone, styleBand, stylePane, styleBoard } from '../core/style.ts'
 import type { PaneLine } from '../core/style.ts'
+import { signalLines } from '../core/signal.ts'
 import { renderBoard } from '../core/board.ts'
 import type { CardRow } from '../core/contracts.ts'
 import { buildJql, mergeJira, parseSearch } from '../core/jira.ts'
@@ -189,18 +190,21 @@ test('pane, mixed: needs you first, then failed, then running (longest first), d
   const t = paneText(lines)
   assert.equal(t[0], 'WALKMAN ⚠ 1  ✕ 1  ● 2  ✓ 3')
   const idx = (needle: string) => t.findIndex((l) => l.includes(needle))
-  assert.ok(idx('NEEDS YOU') < idx('W-3') && idx('W-3') < idx('FAILED') && idx('FAILED') < idx('W-4') && idx('W-4') < idx('RUNNING'))
+  assert.equal(idx('W-3'), -1, 'the card the signal box shows is not listed again')
+  assert.equal(idx('NEEDS YOU'), -1, 'a lone needs-you card leaves no NEEDS YOU block')
+  assert.ok(idx('FAILED') < idx('W-4') && idx('W-4') < idx('RUNNING'))
   assert.ok(idx('W-2') < idx('W-1'), 'running: the one that has run longest is on top')
   assert.ok(t.some((l) => l.trim() === '✓ 3 done'))
   assert.ok(!t.some((l) => l.includes('W-5')), 'done cards are not listed')
   assert.ok(t.find((l) => l.includes('W-2'))?.includes('30m'))
-  assert.ok(t.find((l) => l.includes('W-3'))?.includes('7m'))
+  assert.ok(t.find((l) => l.includes('W-4'))?.includes('4m')) // the listed failed card; W-3 (7m) is in the signal box
   assert.ok(!t.join('\n').match(/\d:\d\d/), 'no seconds')
 })
 
 test('pane: needs you and failed use different colors, and each has its own symbol', () => {
-  const lines = stylePane([row({ light: 'waiting', sinceMs: at(1) }), row({ key: 'CF1-2', light: 'failed', sinceMs: at(1) })], undefined, NOW)
-  const needs = lines.find((l) => plain(l.left).includes('CF1-195'))
+  // CF1-195 has waited longest: the signal box shows it, so the list starts with the second one (CF1-3)
+  const lines = stylePane([row({ light: 'waiting', sinceMs: at(9) }), row({ key: 'CF1-3', light: 'waiting', sinceMs: at(1) }), row({ key: 'CF1-2', light: 'failed', sinceMs: at(1) })], undefined, NOW)
+  const needs = lines.find((l) => plain(l.left).includes('CF1-3'))
   const failed = lines.find((l) => plain(l.left).includes('CF1-2'))
   // each in its own bold box in its own colour, behind a chip on that colour
   assert.deepEqual([needs?.box?.style, needs?.box?.tone], ['bold', 'warning'])
@@ -234,8 +238,10 @@ test('pane: more cards than the viewport has rows ends with "+N more" and stays 
 test('pane: needs-you says why only from what is known, failed adds no invented line, no empty lines', () => {
   const lines = stylePane([row({ key: 'A-1', title: 'plan', light: 'waiting', runState: 'plan_ready', sinceMs: at(5) }), row({ key: 'A-2', title: 'ask', light: 'waiting', sinceMs: at(2) }), row({ key: 'A-3', title: 'bad', light: 'failed', sinceMs: at(1) })], undefined, NOW)
   const t = paneText(lines)
-  assert.ok(t.some((l) => l.includes('plan is ready for your review')))
+  assert.ok(!t.some((l) => l.includes('plan is ready for your review')), 'the lead card (A-1) says why in the signal box, not in the list')
   assert.ok(t.some((l) => l.includes('permission question')))
+  const box = signalLines(row({ key: 'A-1', title: 'plan', light: 'waiting', runState: 'plan_ready', sinceMs: at(5) }), NOW, 60).map((l) => plain(l.left)).join('\n')
+  assert.ok(box.includes('plan is ready for your review'), box)
   const i = t.findIndex((l) => l.includes('A-3'))
   assert.ok(i === t.length - 1 || /FAILED|RUNNING|✓|IN JIRA|disk/.test(t[i + 1] as string), 'a failed card has one line')
   assert.ok(t.every((l) => l.trim() !== ''), 'no empty lines')

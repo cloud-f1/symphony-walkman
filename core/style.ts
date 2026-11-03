@@ -155,7 +155,7 @@ const PANE_TONE: Record<Light, Tone> = { waiting: 'warning', failed: 'error', wa
 
 // Why a card needs you, only from what is known: a waiting light comes from a permission ask or from a symphony run
 // in plan_ready, nothing else. The question itself is not available, so it is not made up.
-const reasonOf = (r: CardRow): string => r.why ?? (r.runState === 'plan_ready' ? 'plan is ready for your review' : 'a permission question is waiting')
+export const reasonOf = (r: CardRow): string => r.why ?? (r.runState === 'plan_ready' ? 'plan is ready for your review' : 'a permission question is waiting')
 
 // `top`: overview lines drawn right under the title (the Jira meter, jiraboard.ts), htop style; they always stay.
 export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now: number, others: readonly JiraIssue[] = [], size: PaneSize = {}, top: readonly PaneLine[] = []): PaneLine[] {
@@ -205,8 +205,11 @@ export function stylePane(rows: readonly CardRow[], disk: Disk | undefined, now:
     const line = { ...head(r, { text: SYMBOL[light], tone: PANE_TONE[light], bold: true }, formatMinutes(now - r.sinceMs), '', inner), box }
     return light === 'waiting' ? [line, { left: [{ text: '  ' + clipCells(reasonOf(r), inner - 2), tone: PANE_TONE[light] }], box }] : [line]
   }
-  needs.forEach((r, i) => items.push({ lane: firstOf('waiting', i), lines: card(r, 'waiting'), counted: true, boxRows: 2 }))
-  failed.forEach((r, i) => items.push({ lane: firstOf('failed', i), lines: card(r, 'failed'), counted: true, boxRows: 2 }))
+  // The card the signal box above already shows (leadOf in signal.ts: needs you, then failed, then the longest running)
+  // is not listed again when it needs you or failed: the box carries its key, title, state, time and reason.
+  const lead = needs[0] ?? failed[0] ?? running[0]
+  needs.filter((r) => r !== lead).forEach((r, i) => items.push({ lane: firstOf('waiting', i), lines: card(r, 'waiting'), counted: true, boxRows: 2 }))
+  failed.filter((r) => r !== lead).forEach((r, i) => items.push({ lane: firstOf('failed', i), lines: card(r, 'failed'), counted: true, boxRows: 2 }))
   // the running cards share one round box
   const runBox: PaneBox = { id: ++boxId, style: 'round', tone: 'success' }
   running.forEach((r, i) => {
