@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { auditNoNetwork, auditPackage, auditReadOnly, auditRecordGuard, auditSecrets, auditVerified } from './audit.mjs'
+import { auditNoNetwork, auditPackage, auditReadOnly, auditRecordGuard, auditSecrets, auditVerified, auditWrites } from './audit.mjs'
 import { isRecordName } from '../core/sessions.ts'
 import { SW_REF, VERSION } from '../core/version.ts'
 
@@ -84,6 +84,7 @@ gate('types: tsc finds no error in core/ and hooks/ (the code that ships)', () =
 const register = read('hooks/register.ts')
 const coreSources = readdirSync(join(root, 'core')).filter((f) => f.endsWith('.ts')).map((f) => read('core/' + f))
 gate('audit: the Mod only searches Jira (read only)', () => auditReadOnly(register))
+gate('audit: the Mod writes only the pet state file', () => auditWrites(register))
 gate('audit: no network call of its own', () => auditNoNetwork([register, ...coreSources].join('\n')))
 gate('audit: no secret-looking string in a tracked file', () => {
   const files = run('git', ['ls-files']).split('\n').filter(Boolean)

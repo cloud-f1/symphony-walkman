@@ -189,7 +189,7 @@ If the lookup fails (no `uvx`, no credentials file, bad credentials, offline), t
 
 ## What it will not do
 
-- The plugin never writes to Jira, to symphony-workflow's files, or to your repo. (The separate setup CLI below does write the repo's `.claude/settings.json` and your credentials file, but only after it shows a plan and you agree.)
+- The plugin never writes to Jira, to symphony-workflow's files, or to your repo. It writes one small file for the desktop pet, `~/.walkman/state/<session>.json` (card key, light, the reason the pane already shows, steps, the Jira title, a count of subagents; no tool input, no path, no secret), rewritten when a card changes and every 30 seconds while one runs; the release gate fails on any other write. (The separate setup CLI below does write the repo's `.claude/settings.json` and your credentials file, but only after it shows a plan and you agree.)
 - The plugin makes no network calls of its own and holds no API key. The optional Jira lookup only runs the read-only `symphony-workflow search`; your credentials stay in the credentials file you chose.
 - If git, a run file or `df` is missing or unreadable, the row or the disk line is simply left out. It never throws into your session.
 
@@ -317,6 +317,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 | Number from the oldest work, 0.17.12 (checks and a Mod test, 2026-11-03) | Passed: while subagents or a background shell run, the big number and the card's time count from the oldest of them, not from the latest turn (a Mod test fails without this change and passes with it). Seen before the fix: the owner's CAN-721 showed 0 and under a minute while its subagents had run 44 minutes. Not seen: the fixed number in that real session; a subagent the host keeps listed as running for days (seen once, 42h) still counts, and the digits stop at 99 |
 | Needs-you without repeats, 0.17.13 (checks and Mod tests, 2026-11-03) | Passed: the card the signal box stands for (needs you, then failed, then the longest running) is not listed again under NEEDS YOU or FAILED, so a lone needs-you card leaves no such block; its reason takes the box's last line and its time moves to the state line; the countdown digits are white (not amber) while a card needs you or failed and stay amber beside the green man. Seen before the fix: the owner's CAN-812 screenshot, key, title and time twice and everything amber. Not seen: the new pane in the owner's theme, and a reason longer than the box (it is cut with an ellipsis; 60 columns hold the longest known one) |
 | Stale subagents, 0.17.14 (checks and a Mod test, 2026-11-04) | Passed: a subagent the host lists as running keeps its card walking for up to 12 hours (counted from when Walkman first saw it); after that the card goes idle and the number counts from the light again; stopped, finished and idle subagents never count. Seen before the fix: one subagent listed as running for 42 hours (CAN-724) in the owner's pane. Not seen: a real subagent crossing the 12 hour mark; a legitimate agent that runs longer than 12 hours stops lighting its card |
+| Pet state file, 0.18.0 (checks and a Mod test, 2026-11-08) | Passed: a turn starting writes `~/.walkman/state/<session>.json` with the walking card, the turn completing writes it again with no cards, and nothing else is written; the builder keeps only walking, waiting and failed cards, trims and cleans the text, leaves out paths, branches and tool input, and the reader rejects a stale, foreign-schema or broken file; a new release gate fails any other write. Not seen: the file in a real session on the owner's Mac, and the desktop pet reading it; a session killed mid-run was not tried (the file only goes stale, as designed) |
 | A worktree the session left keeps no needs-you, 0.7.1 (2026-10-16) | Mod test only: an ask in one worktree, then a turn in another, leaves the first idle. Seen live before the fix (three worktrees red for 24 hours). **Not seen** in a real session after the fix: moving a real session between worktrees was not driven |
 | Windows | **Not run**: no Windows machine. The disk line is skipped there and paths are untested |
 
@@ -346,6 +347,7 @@ pnpm run release        # the same, then (only if all passed) tag vX.Y.Z, push i
 | plugin | `claude plugin validate --strict .` fails |
 | types | `tsc` reports an error in `core/` or `hooks/`, or TypeScript or the Mod API types are missing |
 | audit: read only | the Mod runs any symphony-workflow command other than `search` and `call search_issues` |
+| audit: writes | the Mod writes any file other than the pet state file, or uses a delete, rename or shell write |
 | audit: network | the Mod calls `fetch` or `$.http` |
 | audit: secrets | a tracked file holds what looks like a token or a private key |
 | audit: session records | a session record could be read without `isRecordName`, or that guard lets a `.key` name through |
