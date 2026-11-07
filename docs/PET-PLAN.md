@@ -110,7 +110,11 @@ The pane never reports where it is on the screen, so the exit is an effect, not 
   live on the Rust side. None of this is tried yet (see the P1 spike list in section 10).
 - **Input, main path:** the state file (decision 4). The Mod already knows each card's light, reason, steps and
   since-time, so it writes them once and the pet only reads: one copy of the light logic, not two.
-- **Input, fallback:** if the spike shows the Mod does not keep writing when no pane is open, the pet reads
+  Found in the spike (item 6 below): one Mod instance runs per Claude Code session and knows only its own session, so the
+  file is one per session (for example `~/.walkman/state/<session>.json`) and the pet merges them. A session that is killed
+  never writes again, so every file carries a written-at time and the pet ignores a file older than a few seconds beyond
+  its refresh interval ("when does the next update never come?").
+- **Input, fallback:** if the Mod cannot write when no pane is open, the pet reads
   `~/.claude/sessions/*.json` itself (names matching `isRecordName` only, never a `.key` file) and `git worktree list`
   for the repos found there; map a record to a card by its worktree, as `otherSessionLights` does; add
   `lightWhileWorking` and `sinceWithWork` (work between turns, WALK-263 and WALK-265). That duplicates logic and
@@ -170,12 +174,16 @@ Made by the owner on 2026-11-08, after the sibling repos in `../git_saas` were r
    small window that stays on screen all day. The pet's bubble is drawn in CSS or SVG; three.js is considered only for a
    "pop" moment. `emotion-bubble` is `UNLICENSED` and owned by the same organisation, so reuse needs no licence step.
 
-Still open:
+Answered by the owner on 2026-11-08 (second round):
 
-5. Default: pet off until switched on, or on whenever the companion runs?
-6. The cat and the dog are our own pixel art (the plan assumes this); P0 shows a first version of each.
-8. Is "the emotion bubble" the owner meant the look of `emotion-bubble` (as read above), or the speech bubble over the
-   pet's head? Item 7 assumes the first.
+5. **On whenever the app runs.** No separate "pet on" switch inside the app; `/walkman pet off` still quits it.
+8. **The bubble is the look of the `emotion-bubble` repo** (item 7 stands).
+6. **The cat and the dog: "ok"**, read as accepting the P0 look as the first version and moving on. The owner did not say
+   what to change, so any change comes later from seeing them on screen.
+- **Repo name `walkman-pet`: yes.** The repo is **not created yet**; nobody has said who creates it. The spike below was
+  built outside every repo so this does not block it.
+
+Still open: who creates `walkman-pet` (owner, or this session on a clear go).
 
 ## 10. Phases and what "done" means
 
@@ -202,6 +210,31 @@ A spike is a small throwaway app from the template; nothing here ships. "Cannot 
 7. **Cost:** CPU and battery of the window idle and animating (a number, not a feeling).
 8. **Several displays:** the pet runs from one screen to another.
 
+### P1 spike results (WALK-288, 2026-11-08, the owner's Mac, a throwaway app outside every repo)
+
+The spike was `tauri-app-template` with one 260x240 window and a 120x120 canvas: transparent, borderless, always on top,
+visible on all workspaces, no Dock icon (activation policy Accessory), a 50 ms thread that switches click-through on and off
+by the pointer position, a drag region on the pet, and a 500 ms reader of a state file. It was built and run (a debug build,
+Rust 1.99, Tauri 2.11) and then deleted.
+
+| # | Item | Result | What backs it |
+|---|---|---|---|
+| 1 | Transparent window | **Yes** | Capturing only that window gave 249,600 pixels, 177,700 fully transparent, 71,712 opaque. It needs `app.macOSPrivateApi: true` and the `macos-private-api` feature of the `tauri` crate; that is a private macOS API, which rules out the Mac App Store (an unsigned `.dmg`, as planned, is not affected) |
+| 2 | Always on top, all Spaces, no Dock icon | **Partly** | The window sits at level 5 (a normal window is 0) and is on screen. **Not checked:** above a full-screen app, following to another Space, the missing Dock icon |
+| 3 | Click-through except over the pet | **Partly** | The log shows the switch going true and false as the pointer moved on and off the pet. **Not checked:** a click on the terminal actually passing through, and a click on the pet arriving (the spike logged no clicks) |
+| 4 | Drag | **Partly** | The window moved in steps (2420,1432 to 2346,1208 to 2324,1104 to 2322,1102, later 2452,1204) with the pointer over the pet, which looks like the owner dragging it. **Not checked:** remembering where it was left (the spike does not save a position) |
+| 5 | Read the state file | **Yes** | Seen 93, 404 and 402 ms after three writes, with a 500 ms poll; the limit was 2 seconds |
+| 6 | Does the Mod write with no pane open? | **Yes by reading the code, not run** | `turn.start`, `turn.complete` and `tool.check` in `hooks/register.ts` call `mark()` and none of them looks at `paneOpen`; only the title and the animation timer do. A write inside `mark()` would therefore run with no pane. Writing is not implemented, so this was not run. Consequence: one file per session (section 7) |
+| 7 | Cost | **Partly** | The app process used 0.9, 4.6 and 2.9 percent CPU in three samples, in a debug build, with the 50 ms thread, an 8 frames a second canvas and the 500 ms reader. **Not measured:** WebKit's separate web-content process, battery, a release build |
+| 8 | Several displays | **Not checked** | The owner's window ended up on a second display (its position is beyond the first screen's width) but running from one display to the other was not watched |
+
+What the spike changes in the plan:
+
+- The Tauri route works for the parts that were run (1, 5, and the switch in 3). The 50 ms polling thread for click-through is a
+  guess at the cheapest way; a release build and the web-content process must be measured before P1 is called done.
+- Items 2, 3 (a real click), 4 (position kept) and 8 need the owner's eyes and hands on the real app, not on a spike.
+- `macOSPrivateApi` is a small, known cost of transparency; it belongs in the install guide (P4).
+
 ## 11. What this plan rests on, and what it does not
 
 - **Read:** the clawd-on-desk README, its custom HTTP agent guide, its repo layout and licence notes; this repo's
@@ -209,6 +242,9 @@ A spike is a small throwaway app from the template; nothing here ships. "Cannot 
 - **Read for decisions 2, 3 and 7 (2026-11-08):** the README, `tauri.conf.json`, Cargo and npm dependencies of
   `tauri-app-template` and `emotion-bubble`, and the `CLAUDE.md` and licence of `emotion-bubble`. `emotion-bubble-installers`
   holds only a `v0.1.0` folder and was not opened further.
-- **Not verified:** that a Tauri transparent, always-on-top, click-through window behaves as needed on the owner's macOS
-  and display setup (the P1 spike list); whether the Mod writes with no pane open; how the Clawd theme format treats a
-  non-crab walking pet; the System Events window lookup; battery cost; the size of the art work for the cat and the dog.
+- **Run for P1 (2026-11-08):** a throwaway Tauri window on the owner's Mac (results table in section 10); the Mod source
+  for item 6 (read, not run).
+- **Not verified:** above a full-screen app and across Spaces; a real click passing through, and a click on the pet; the
+  position being kept; two displays; the web-content process and battery cost; a release build; that the Mod can write the
+  state file without breaking its read-only audit; how the Clawd theme format treats a non-crab walking pet; the System
+  Events window lookup; the size of the art work for the cat and the dog.
