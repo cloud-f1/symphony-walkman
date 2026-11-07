@@ -8,7 +8,7 @@ description: Contributor rules for the symphony-walkman repo itself (architectur
 
 ## What this is
 
-A native Claude Code Mod (TypeScript, no build step, no runtime dependencies) that shows which Jira card Claude is working on as a pedestrian signal, in the terminal and in Claude Desktop. Read-only by design.
+A native Claude Code Mod (TypeScript, no build step, no runtime dependencies) that shows which Jira card Claude is working on as a pedestrian signal, in the terminal and in Claude Desktop. Read-only by design, apart from one state file for the desktop pet (`~/.walkman/state/<session>.json`).
 
 ## Commands
 
@@ -26,7 +26,7 @@ Core checks live in `checks/*.check.ts` on purpose: `claude plugin test` loads e
 - `core/*.ts` is **pure**: no `$`, no I/O, no clock reads. Time and files are passed in.
 - `hooks/register.ts` is the **only** file that calls the mods API. Write calls in full (`$.ns.method`), event names as string literals, helpers taking `$` as top-level functions in that file (`validate` enforces this).
 - `Svg` is a leaf: call the constructor directly, not through `h()` (which adds an empty `children` the engine refuses).
-- Never write to Jira, symphony-workflow run files or any repo. Never add a network call of the plugin's own or a key. The one allowed outside read is `symphony-workflow search` (core/jira.ts builds its JQL from validated pieces, and a test asserts no write verb is ever run); keep it in the background and cached.
+- Never write to Jira, symphony-workflow run files or any repo. The one file the Mod writes is the pet's state file, `~/.walkman/state/<session>.json` (`writePetState` in `hooks/register.ts`, built by `core/petstate.ts`); it holds no tool input, path or secret, `scripts/audit.mjs` `auditWrites` fails the release on any other write, and the Mod cannot delete, so a silent file is a dead session (the pet ignores one older than `PET_STALE_MS`). Never add a network call of the plugin's own or a key. The one allowed outside read is `symphony-workflow search` (core/jira.ts builds its JQL from validated pieces, and a test asserts no write verb is ever run); keep it in the background and cached.
 - Every signal path is best effort: a failing signal must not change a turn or a tool result (`mark()` and `refresh()` swallow errors by design).
 - A card = a git worktree whose branch matches `KEY-n[-slug]` (`core/card.ts`). Do not add per-project config for this.
 

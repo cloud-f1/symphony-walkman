@@ -1,6 +1,7 @@
 // Symphony Walkman: native Claude Code Mod. Thin adapter: every mods API call lives in this file,
 // every decision lives in ../core (pure, testable without a session). Read only: it never writes
-// to Jira, to symphony-workflow's run files, or to any repo.
+// to Jira, to symphony-workflow's run files, or to any repo. The one file it writes is the desktop pet's state file
+// (writePetState); the release gate checks that.
 import type { EngineInterface as Engine, On, PluginOptions, RenderElement } from 'claude-code' // types only; erased at run time
 import { agentsAtWork, cardFromBranch, lightWhileWorking, onePerCard, parseWorktrees, sinceWithWork } from '../core/card.ts'
 import { deriveLight, parseRunState } from '../core/lights.ts'
@@ -20,6 +21,7 @@ import { TRACK_ROWS, playground } from '../core/track.ts'
 import { SCENES, demoRows } from '../core/demo.ts'
 import { touchedWorktree } from '../core/touch.ts'
 import { playgroundSvg } from '../core/tracksvg.ts'
+import { PET_BEAT_MS, buildPetState, petStateKey, petStatePath, petStateText } from '../core/petstate.ts'
 import { isRecordName, otherSessionLights, ownShellSince, parsePs, parseRecord, parseTasklist } from '../core/sessions.ts'
 import type { SessionRecord } from '../core/sessions.ts'
 import { CARD_CELLS, boardGrid } from '../core/boardgrid.ts'
@@ -558,9 +560,35 @@ async function mark($: Engine, patch: Partial<Omit<Live, 'sinceMs'>>, keepTime =
     note(`mark ${JSON.stringify(patch)} path=${path} cwd=${cwd}`)
     cache.at = -Infinity // a signal changed: reread on the next draw
     $.ui.invalidate('ui.render')
+    void writePetState($) // the desktop pet reads this; never awaited, a failure is only noted
   } catch (err) {
     // A signal is a courtesy; it must never affect the turn or the tool.
     note(`mark failed ${JSON.stringify(patch)}: ${String(err).slice(0, 100)}`)
+  }
+}
+
+// The one file the Mod writes (WALK-292, decision 4 of docs/PET-PLAN.md): ~/.walkman/state/<session>.json, for the desktop
+// pet. It is rewritten when a card's light, reason, steps or title changes, and every PET_BEAT_MS while a card is active so
+// the pet can tell a living session from one that was killed (the Mod cannot delete a file, so a silent file is a dead one).
+let petKey = ''
+let petBeat: { cancel: () => void } | undefined
+async function writePetState($: Engine, beat = false): Promise<void> {
+  try {
+    await refresh($)
+    const id = await $.session.id()
+    const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE')) || ''
+    const path = petStatePath(home, id)
+    if (!path) return
+    const state = buildPetState(id, await $.clock.now(), cache.rows)
+    const key = petStateKey(state)
+    if (beat || key !== petKey) {
+      await $.fs.write(path, petStateText(state))
+      petKey = key
+    }
+    petBeat?.cancel()
+    petBeat = state.cards.length > 0 ? $.clock.after(PET_BEAT_MS, () => { petBeat = undefined; void writePetState($, true) }) : undefined
+  } catch (err) {
+    note(`pet state failed: ${String(err).slice(0, 100)}`)
   }
 }
 

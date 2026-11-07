@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 // @ts-ignore the release scripts are plain ESM JavaScript
-import { auditNoNetwork, auditPackage, auditReadOnly, auditRecordGuard, auditSecrets, auditVerified } from '../scripts/audit.mjs'
+import { auditNoNetwork, auditPackage, auditReadOnly, auditRecordGuard, auditSecrets, auditVerified, auditWrites } from '../scripts/audit.mjs'
 
 test('read-only: every symphony-workflow call the Mod makes is a search', () => {
   const good = "runSw($, settings, ['search', jql])\nrunSw($, settings, ['call', 'search_issues', JSON.stringify(x)])"
@@ -10,6 +10,17 @@ test('read-only: every symphony-workflow call the Mod makes is a search', () => 
   assert.match(auditReadOnly("runSw($, s, ['call', 'update_issue', '{}'])")[0], /update_issue/)
   assert.match(auditReadOnly("$.process.run(['uvx', '--from', SW_GIT, 'symphony-workflow', 'rollup', k])")[0], /rollup/)
   assert.match(auditReadOnly('no symphony-workflow call at all')[0], /no symphony-workflow call found/)
+})
+
+test('writes: the pet state file is the one thing the Mod writes, through the path petStatePath gave', () => {
+  const good = "const path = petStatePath(home, id)\nawait $.fs.write(path, petStateText(state))"
+  assert.deepEqual(auditWrites(good), [])
+  assert.match(auditWrites("const path = petStatePath(h, i)\nawait $.fs.write('/etc/hosts', 'x')")[0], /not the path petStatePath gave|\/etc\/hosts/)
+  assert.match(auditWrites(good + "\nawait $.fs.write(path, 'again')").join('\n'), /2 \$\.fs\.write calls/)
+  assert.match(auditWrites('await $.fs.write(somewhere, t)').join('\n'), /not taken from petStatePath/)
+  assert.match(auditWrites(good + "\nawait $.fs.remove(path)").join('\n'), /\$\.fs\.remove/)
+  assert.match(auditWrites(good + "\nawait $.process.run(['rm', '-rf', x])").join('\n'), /shell command "rm"/)
+  assert.match(auditWrites('no write at all')[0], /no \$\.fs\.write found/)
 })
 
 test('no network of its own: no fetch, no http client in the Mod', () => {

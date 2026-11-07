@@ -18,6 +18,20 @@ export function auditReadOnly(source) {
   return problems
 }
 
+// The Mod writes exactly one file: the pet's state file, whose path comes from petStatePath (core/petstate.ts).
+// Anything else that changes a file or a folder, through the fs API or a shell command, fails the gate.
+export function auditWrites(source) {
+  const problems = []
+  const writes = [...source.matchAll(/\$\.fs\.write\(\s*([^,)]*)/g)]
+  if (writes.length === 0) problems.push('writes: no $.fs.write found (cannot check = failed)')
+  if (writes.length > 1) problems.push(`writes: ${writes.length} $.fs.write calls, only the pet state file may be written`)
+  for (const m of writes) if (m[1].trim() !== 'path') problems.push(`writes: $.fs.write to "${m[1].trim()}", not the path petStatePath gave`)
+  if (!/\bconst path = petStatePath\(/.test(source)) problems.push('writes: the written path is not taken from petStatePath')
+  for (const m of source.matchAll(/\$\.fs\.(remove|delete|unlink|mkdir|rename|move|copy|append|truncate|chmod|symlink)\b/g)) problems.push(`writes: the Mod uses $.fs.${m[1]}`)
+  for (const m of source.matchAll(/\$\.process\.run\(\s*\[\s*['"](rm|mv|cp|touch|tee|chmod|chown|dd|ln|mkdir|rmdir|truncate|sed|install)['"]/g)) problems.push(`writes: the Mod runs the shell command "${m[1]}"`)
+  return problems
+}
+
 // The Mod reaches Jira only through the symphony-workflow CLI; it makes no network call of its own.
 export function auditNoNetwork(source) {
   const problems = []

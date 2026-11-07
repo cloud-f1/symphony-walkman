@@ -8,7 +8,7 @@ const PORCELAIN =
 const DF = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/d 488245288 400000000 77594624 84% /\n'
 
 type Issue = { key: string; status: string; summary: string; assignee: string | null }
-interface Setup { porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean; cwd?: { v: string }; dirs?: Record<string, string[]>; alive?: string; agents?: unknown[]; reads?: string[]; tasklist?: string }
+interface Setup { writes?: { path: string; text: string }[]; porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean; cwd?: { v: string }; dirs?: Record<string, string[]>; alive?: string; agents?: unknown[]; reads?: string[]; tasklist?: string }
 
 function stubs(on: any, setup: Setup = {}) {
   const files = setup.files ?? {}
@@ -29,6 +29,7 @@ function stubs(on: any, setup: Setup = {}) {
   on('env.get', (_: any, e: any) => ({ value: e.name === 'HOME' ? '/home/u' : setup.env?.[e.name] }))
   on('session.cwd', () => ({ value: setup.cwd?.v ?? CWD }))
   on('fs.exists', (_: any, e: any) => ({ value: e.path in files }))
+  on('fs.write', (_: any, e: any) => { setup.writes?.push({ path: e.path, text: e.text }); return { value: undefined } })
   on('fs.list', (_: any, e: any) => ({ value: (setup.dirs?.[e.path] ?? []).map((name) => ({ name, kind: 'file', size: 1, mtimeMs: 0, isLink: false })) }))
   on('fs.read', (_: any, e: any) => {
     setup.reads?.push(e.path)
@@ -106,6 +107,22 @@ test('a running turn lights the card green, completion clears it', async ($, on)
   expect((await walkman($, 'board print')).text).toContain('running')
   await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'end_turn' })
   expect((await walkman($, 'board print')).text).not.toContain('running  ')
+})
+
+test('the pet state file: written when a card runs, again when it stops, and nowhere else', async ($, on) => {
+  const writes: { path: string; text: string }[] = []
+  stubs(on, { writes })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await new Promise((r) => setTimeout(r, 30))
+  expect(writes.length).toBeGreaterThan(0)
+  expect(writes.every((w) => w.path === '/home/u/.walkman/state/me.json')).toBe(true)
+  const running = JSON.parse(writes[writes.length - 1].text)
+  expect(running.schema).toBe(1)
+  expect(running.session).toBe('me')
+  expect(running.cards.map((c: any) => c.key + ':' + c.light)).toEqual(['CF1-195:walking'])
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'end_turn' })
+  await new Promise((r) => setTimeout(r, 30))
+  expect(JSON.parse(writes[writes.length - 1].text).cards).toEqual([])
 })
 
 test('a run file is ignored until runs_dir is set (plan_ready path is NOT covered here)', async ($, on) => {
