@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Walkman Pet Preview</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a title, a control strip, one wide mock screen where the pet runs out of the Walkman pane,
+   then three spec cards (original, cat, dog) that double as the pet picker. */
+:root {
+  --bg: #f4f6f2; --fg: #1c2420; --muted: #56625b; --line: #d6ddd5; --panel: #ffffff;
+  --accent: #2c9a55; --amber: #c98700; --red: #cc4036; --chip: #e7ede6;
+  --display: "Fredoka", "Trebuchet MS", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* the mock screen is a picture of a desktop: it keeps its own dark look in both themes */
+  --scr-top: #1b2733; --scr-bot: #0f151c; --win: #11171e; --win-bar: #1b232c; --pane: #161d25;
+  --pane-line: #2a3541; --scr-fg: #d7dfe6; --scr-dim: #7d8a96; --dock: #202a34;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12171a; --fg: #e5ece7; --muted: #9aa8a0; --line: #2a3430; --panel: #1a2125;
+    --accent: #55c27d; --amber: #f0b429; --red: #ff6b5e; --chip: #232c2a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12171a; --fg: #e5ece7; --muted: #9aa8a0; --line: #2a3430; --panel: #1a2125;
+  --accent: #55c27d; --amber: #f0b429; --red: #ff6b5e; --chip: #232c2a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 var(--mono);
+  padding-block: 28px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 22px; }
+h1 { font: 600 clamp(28px, 5vw, 40px)/1.1 var(--display); margin: 0; letter-spacing: .01em; text-wrap: balance; }
+.sub { margin: 6px 0 0; color: var(--muted); max-width: 62ch; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; }
+.group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.group > span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; margin-right: 4px; }
+button { font: inherit; color: var(--fg); background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #07140b; font-weight: 600; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.replay { margin-left: auto; font-weight: 600; }
+
+/* the mock screen */
+.stage { position: relative; width: 100%; aspect-ratio: 16 / 9; min-height: 300px; border-radius: 14px; overflow: hidden; border: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--scr-top), var(--scr-bot)); color: var(--scr-fg); }
+.win { position: absolute; left: 4%; top: 7%; width: 70%; height: 70%; background: var(--win); border: 1px solid var(--pane-line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+.win .bar { height: 7%; min-height: 20px; background: var(--win-bar); display: flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 11px; color: var(--scr-dim); }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: #ff5f57; } .dot:nth-child(2) { background: #febc2e; } .dot:nth-child(3) { background: #28c840; }
+.win .body { flex: 1; display: grid; grid-template-columns: 1.4fr 1fr; min-height: 0; }
+.term { padding: 12px 14px; font-size: clamp(9px, 1.25vw, 12px); color: var(--scr-dim); line-height: 1.6; overflow: hidden; }
+.term b { color: var(--scr-fg); font-weight: 600; }
+.pane { border-left: 1px solid var(--pane-line); background: var(--pane); padding: 10px 12px; font-size: clamp(8px, 1.1vw, 11px); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pane .head { display: flex; justify-content: space-between; color: var(--scr-fg); font-weight: 600; white-space: nowrap; gap: 6px; }
+.pane .head i { font-style: normal; color: var(--scr-dim); font-weight: 400; }
+.sigbox { border: 1px solid var(--accent); border-radius: 8px; padding: 8px; display: flex; gap: 10px; align-items: center; min-height: 64px; transition: border-color .3s; }
+.sigbox.amber { border-color: var(--amber); } .sigbox.red { border-color: var(--red); }
+.sigspot { width: clamp(34px, 6.5vw, 66px); height: clamp(40px, 7vw, 72px); display: grid; place-items: center; position: relative; flex: none; }
+.sigtext { min-width: 0; line-height: 1.35; }
+.sigtext b { color: var(--scr-fg); } .sigtext .state { color: var(--accent); font-weight: 600; } .sigtext .state.amber { color: var(--amber); } .sigtext .state.red { color: var(--red); }
+.out { color: var(--scr-dim); font-style: italic; }
+.rule { height: 1px; background: var(--pane-line); margin: 2px 0; }
+.dockline { position: absolute; left: 3%; right: 3%; bottom: 5%; height: 12%; background: var(--dock); border-radius: 12px; border: 1px solid var(--pane-line); opacity: .8; }
+.floor { position: absolute; left: 0; right: 0; bottom: 5%; height: 0; }
+.pet { position: absolute; left: 0; top: 0; transform-origin: 50% 100%; will-change: transform; pointer-events: none; }
+.pet canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+.bubble { position: absolute; left: 50%; bottom: 100%; transform: translate(-50%, -6px); white-space: nowrap; background: var(--amber); color: #1a1100; font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 9px; }
+.bubble::after { content: ""; position: absolute; left: 50%; top: 100%; margin-left: -5px; border: 5px solid transparent; border-top-color: var(--amber); }
+.zzz { position: absolute; left: 100%; bottom: 100%; color: var(--scr-dim); font: 600 14px var(--display); white-space: nowrap; }
+.caption { color: var(--muted); font-size: 13px; max-width: 80ch; }
+
+/* the three cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 10px; text-align: left; cursor: pointer; }
+.card[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--panel); color: var(--fg); font-weight: 400; }
+.card .show { height: 110px; border-radius: 8px; background: linear-gradient(180deg, var(--scr-top), var(--scr-bot)); display: grid; place-items: center; }
+.card h2 { font: 600 20px var(--display); margin: 0; }
+.card dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 12.5px; }
+.card dt { color: var(--muted); } .card dd { margin: 0; }
+
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.note { border-top: 2px solid var(--line); padding-top: 10px; }
+.note h3 { font: 600 17px var(--display); margin: 0 0 4px; }
+.note p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.note code { font-family: var(--mono); background: var(--chip); padding: 1px 5px; border-radius: 4px; color: var(--fg); }
+@media (max-width: 560px) { .replay { margin-left: 0; } .stage { min-height: 260px; } }
+@media (prefers-reduced-motion: reduce) { .sigbox { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Walkman Pet Preview</h1>
+    <p class="sub">The green man from the Walkman pane, as a pet that runs out of the pane onto your screen. Pick a pet and a state, then press Run out. Everything here is a mock-up drawn for this page.</p>
+  </header>
+
+  <div class="controls" role="group" aria-label="Preview controls">
+    <div class="group" id="petPick"><span>Pet</span>
+      <button data-pet="original" aria-pressed="true">Original</button>
+      <button data-pet="cat" aria-pressed="false">Cat</button>
+      <button data-pet="dog" aria-pressed="false">Dog</button>
+    </div>
+    <div class="group" id="statePick"><span>Card is</span>
+      <button data-state="walking" aria-pressed="true">walking</button>
+      <button data-state="waiting" aria-pressed="false">needs you</button>
+      <button data-state="failed" aria-pressed="false">failed</button>
+      <button data-state="idle" aria-pressed="false">idle</button>
+      <button data-state="done" aria-pressed="false">done</button>
+    </div>
+    <button class="replay" id="replay">Run out of the pane</button>
+  </div>
+
+  <section class="stage" id="stage" aria-label="A mock desktop with a terminal and the Walkman pane">
+    <div class="win" id="win">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:8px">course-academy-next - claude</span></div>
+      <div class="body">
+        <div class="term"><b>Ran 1 shell command</b><br>The gate for CAN-946 is running; the e2e stage holds the lock.<br><br>I will report when the CAN-946 gate finishes.<br><br><span style="color:var(--amber)">* Worked for 3m 24s - 1 shell still running</span></div>
+        <div class="pane">
+          <div class="head"><span>WALKMAN</span><i id="counts">&#9888; 0 &nbsp;&#215; 0 &nbsp;&#9679; 1</i></div>
+          <div class="sigbox" id="sigbox">
+            <div class="sigspot" id="sigspot"></div>
+            <div class="sigtext" id="sigtext"></div>
+          </div>
+          <div class="rule"></div>
+          <div style="color:var(--scr-dim)">disk 38% &nbsp;20 GB free</div>
+          <div style="color:var(--scr-dim)">jira 40 todo &nbsp;3 doing</div>
+        </div>
+      </div>
+    </div>
+    <div class="dockline"></div>
+    <div class="pet" id="pet"><canvas id="petCanvas"></canvas></div>
+  </section>
+  <p class="caption" id="caption"></p>
+
+  <section class="cards" id="cards" aria-label="The three pets"></section>
+
+  <section class="notes">
+    <div class="note"><h3>An app of its own</h3><p>The terminal pane can only draw text cells inside itself. A pet on the desktop needs its own transparent, always-on-top window, so it is a separate small app, not part of the plugin. clawd-on-desk is built the same way (an Electron app that listens to Claude Code through hooks).</p></div>
+    <div class="note"><h3>What it listens to</h3><p>Claude Code's session records in <code>~/.claude/sessions</code>, plus a small state file the Walkman plugin writes (the owner agreed to that): the card, its light, the reason, the steps left.</p></div>
+    <div class="note"><h3>What this page cannot show</h3><p>The real pane never reports where it sits on screen, so the run out of the pane is an effect that starts at the screen's edge or the terminal window, not a measured path. Sizes and speeds are guesses to be tuned on a real Mac.</p></div>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- pixel art ---------- */
+  // The original man: the 10 x 14 side-view bitmaps of core/signal.ts (walking stride, passing, standing).
+  var WALK_A = ["......##..", ".....####.", ".....####.", "......##..", ".....##...", "....####..", "...######.", "..#.###..#", ".#..###...", "#...###...", "....####..", "...##..##.", "..##....##", "##.......#"];
+  var WALK_B = ["......##..", ".....####.", ".....####.", "......##..", ".....##...", "....####..", "....####..", "...#.###..", "...#.###..", ".....###..", "....####..", "....##.#..", "...##..#..", "...#...##."];
+  var STAND  = [".....##...", "....####..", "....####..", ".....##...", "....####..", "...######.", "...######.", "..#.####.#", "..#.####.#", "....####..", "....##.##.", "....##.##.", "....##.##.", "...###.###"];
+  function green(rows) { return rows.map(function (r) { return r.replace(/#/g, "g"); }); }
+
+  function grid(w, h) { var G = []; for (var j = 0; j < h; j++) { G.push(new Array(w).fill(".")); } return G; }
+  function rect(G, c, x, y, w, h) { for (var j = 0; j < h; j++) for (var i = 0; i < w; i++) if (G[y + j] && G[y + j][x + i] !== undefined) G[y + j][x + i] = c; }
+  function px(G, c, x, y) { if (G[y] && G[y][x] !== undefined) G[y][x] = c; }
+  function rows(G) { return G.map(function (r) { return r.join(""); }); }
+  // one leg, 2 wide: down = full length ending in a paw; lifted = one shorter
+  function leg(G, x, dx, lift, top, len, c, paw) {
+    var n = lift ? len - 1 : len;
+    for (var j = 0; j < n; j++) rect(G, j === n - 1 ? paw : c, x + dx, top + j, 2, 1);
+  }
+  // diagonal gait in four phases: [dx, lifted] for hind1, hind2, front1, front2
+  var GAIT = [
+    [[-1, 0], [1, 1], [1, 1], [-1, 0]],
+    [[0, 0], [0, 0], [0, 0], [0, 0]],
+    [[1, 1], [-1, 0], [-1, 0], [1, 1]],
+    [[0, 0], [0, 0], [0, 0], [0, 0]]
+  ];
+
+  function cat(phase) {
+    var G = grid(17, 11), t = GAIT[phase];
+    rect(G, "g", 2, 5, 10, 3);
+    [4, 6, 8].forEach(function (x) { px(G, "d", x, 5); });
+    rect(G, "w", 3, 7, 8, 1);
+    rect(G, "g", 11, 2, 5, 4);
+    px(G, "g", 11, 1); px(G, "g", 15, 1); px(G, "p", 12, 2); px(G, "p", 14, 2);
+    px(G, "k", 12, 3); px(G, "k", 14, 3); px(G, "p", 13, 4);
+    var tail = [[[1, 6], [0, 5], [0, 4], [0, 3]], [[1, 6], [0, 5], [0, 4], [1, 3]], [[1, 6], [0, 5], [0, 4], [0, 3]], [[1, 6], [0, 5], [0, 4]]][phase];
+    tail.forEach(function (p) { px(G, "g", p[0], p[1]); });
+    px(G, "d", 0, 3);
+    [[2, 0], [5, 1], [8, 2], [11, 3]].forEach(function (l) { leg(G, l[0], t[l[1]][0], t[l[1]][1], 8, 3, "g", "w"); });
+    return rows(G);
+  }
+  function dog(phase) {
+    var G = grid(18, 12), t = GAIT[phase], bounce = phase === 0 || phase === 2 ? 1 : 0;
+    rect(G, "g", 2, 4, 10, 4);
+    rect(G, "w", 3, 7, 8, 1);
+    rect(G, "g", 11, 1, 5, 5);
+    rect(G, "o", 10, 1 + bounce, 1, 3); rect(G, "o", 16, 1 + bounce, 1, 3);
+    px(G, "k", 12, 2); px(G, "k", 14, 2);
+    rect(G, "w", 12, 3, 3, 2); px(G, "k", 13, 3); px(G, "p", 13, 5);
+    var tail = [[[1, 4], [0, 3], [0, 2]], [[1, 4], [0, 4], [0, 3]], [[1, 5], [0, 6], [0, 7]], [[1, 4], [0, 4], [0, 3]]][phase];
+    tail.forEach(function (p) { px(G, "g", p[0], p[1]); });
+    [[2, 0], [5, 1], [8, 2], [11, 3]].forEach(function (l) { leg(G, l[0], t[l[1]][0], t[l[1]][1], 8, 4, "g", "o"); });
+    return rows(G);
+  }
+  var PAL = {
+    original: { g: "#3fb950" },
+    cat: { g: "#f0a33b", d: "#b9701a", w: "#fff0d2", p: "#ff8fa3", k: "#23160a" },
+    dog: { g: "#c9915e", o: "#7b4a2b", w: "#f6e7d0", p: "#ff8fa3", k: "#23160a" }
+  };
+  var SPRITES = {
+    original: { walk: [green(WALK_A), green(WALK_B), green(WALK_A), green(WALK_B)], stand: green(STAND) },
+    cat: { walk: [cat(0), cat(1), cat(2), cat(3)], stand: cat(1) },
+    dog: { walk: [dog(0), dog(1), dog(2), dog(3)], stand: dog(1) }
+  };
+  function flipY(r) { return r.slice().reverse(); }
+  function rotate(r) { // lay the standing man down: rotate a quarter turn
+    var h = r.length, w = r[0].length, out = [];
+    for (var x = 0; x < w; x++) { var line = ""; for (var y = h - 1; y >= 0; y--) line += r[y][x]; out.push(line); }
+    return out;
+  }
+  SPRITES.original.fall = rotate(SPRITES.original.stand);
+  SPRITES.cat.fall = flipY(SPRITES.cat.stand);
+  SPRITES.dog.fall = flipY(SPRITES.dog.stand);
+
+  function draw(canvas, frame, pal, scale, mirror, tint) {
+    var h = frame.length, w = frame[0].length, ctx = canvas.getContext("2d");
+    canvas.width = w * scale; canvas.height = h * scale; ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
+      var c = frame[y][x]; if (c === "." || !pal[c]) continue;
+      ctx.fillStyle = tint || pal[c];
+      ctx.fillRect((mirror ? w - 1 - x : x) * scale, y * scale, scale, scale);
+    }
+    return { w: canvas.width, h: canvas.height };
+  }
+
+  /* ---------- cards ---------- */
+  var INFO = {
+    original: { name: "Original", grid: "10 x 14, 4 frames", look: "The Taiwan crossing man: green, head forward, arms swinging", ext: "none: reuses the pane's own bitmaps" },
+    cat: { name: "Cat", grid: "17 x 11, 4 frames", look: "Pointed ears, striped body, tail that curls as it walks", ext: "new drawing" },
+    dog: { name: "Dog", grid: "18 x 12, 4 frames", look: "Floppy ears that bounce, long snout, wagging tail", ext: "new drawing" }
+  };
+  var cardCanvas = {};
+  var cardsEl = document.getElementById("cards");
+  ["original", "cat", "dog"].forEach(function (id) {
+    var b = document.createElement("button");
+    b.className = "card"; b.dataset.pet = id; b.setAttribute("aria-pressed", id === "original" ? "true" : "false");
+    b.innerHTML = '<div class="show"><canvas></canvas></div><h2>' + INFO[id].name + '</h2><dl><dt>Grid</dt><dd>' + INFO[id].grid + '</dd><dt>Look</dt><dd>' + INFO[id].look + '</dd><dt>Art</dt><dd>' + INFO[id].ext + '</dd></dl>';
+    cardsEl.appendChild(b); cardCanvas[id] = b.querySelector("canvas");
+  });
+
+  /* ---------- state ---------- */
+  var stage = document.getElementById("stage"), petEl = document.getElementById("pet"), petCanvas = document.getElementById("petCanvas");
+  var sigbox = document.getElementById("sigbox"), sigspot = document.getElementById("sigspot"), sigtext = document.getElementById("sigtext");
+  var caption = document.getElementById("caption");
+  var pick = { pet: "original", state: "walking" };
+  var pet = { x: 0, y: 0, scale: 3, face: 1, pose: "walk", bubble: "", zzz: false, hop: 0, hidden: false };
+  var runId = 0;
+
+  var STATE_TEXT = {
+    walking: { cls: "", label: "walking", extra: "&lt;1m", note: "Walking: the pet runs along the bottom of the screen while the card runs." },
+    waiting: { cls: "amber", label: "needs you", extra: "7m", note: "Needs you: the pet stops next to the terminal, stands up and shows the reason in an amber bubble." },
+    failed: { cls: "red", label: "failed", extra: "4m", note: "Failed: the pet lies down where it was and stays there." },
+    idle: { cls: "", label: "quiet", extra: "", note: "Idle: the pet goes to a quiet corner and sleeps." },
+    done: { cls: "", label: "done", extra: "", note: "Done: two happy jumps, then it trots off." }
+  };
+  function sigPaint(out) {
+    var s = STATE_TEXT[pick.state];
+    sigbox.className = "sigbox " + s.cls;
+    sigtext.innerHTML = out
+      ? '<b>CAN-946</b><br><span class="out">the pet is out on the screen</span><br><span class="state ' + s.cls + '">' + s.label + '</span> ' + s.extra
+      : '<b>CAN-946</b><br>Admin coupons pages&hellip;<br><span class="state ' + s.cls + '">' + s.label + '</span> ' + s.extra;
+    caption.textContent = s.note;
+  }
+
+  /* ---------- the scene ---------- */
+  function sizes() {
+    var r = stage.getBoundingClientRect();
+    return { W: r.width, H: r.height, sc: Math.max(3, Math.round(r.width / 150)) };
+  }
+  function anchorOf(el) {
+    var s = stage.getBoundingClientRect(), r = el.getBoundingClientRect();
+    return { x: r.left - s.left + r.width / 2, y: r.top - s.top + r.height - 4 };
+  }
+  var tickT = 0;
+  function render(now) {
+    var pal = PAL[pick.pet], sp = SPRITES[pick.pet], frame;
+    var fps = pet.pose === "walk" ? 8 : 0;
+    var idx = reduced || !fps ? 1 : Math.floor(now / (1000 / fps)) % 4;
+    if (pet.pose === "walk") frame = sp.walk[idx];
+    else if (pet.pose === "fall") frame = sp.fall;
+    else frame = sp.stand;
+    var size = draw(petCanvas, frame, pal, pet.scale, pet.face < 0, pet.pose === "fall" && pick.pet !== "original" ? null : null);
+    var squash = pet.pose === "sleep" ? 0.88 : 1;
+    var bob = pet.pose === "walk" && !reduced ? Math.abs(Math.sin(now / 90)) * -pet.scale * 0.6 : 0;
+    petEl.style.display = pet.hidden ? "none" : "block";
+    petEl.style.transform = "translate(" + (pet.x - size.w / 2) + "px," + (pet.y - size.h + bob - pet.hop) + "px) scale(1," + squash + ")";
+    petEl.innerHTML = "";
+    petEl.appendChild(petCanvas);
+    if (pet.bubble) { var b = document.createElement("div"); b.className = "bubble"; b.textContent = pet.bubble; petEl.appendChild(b); }
+    if (pet.zzz) { var z = document.createElement("div"); z.className = "zzz"; z.textContent = ["z", "z z", "z z z"][Math.floor(now / 600) % 3]; petEl.appendChild(z); }
+    // the pet that rests in the pane
+    var spot = sigspotCanvas;
+    var inPane = pet.hidden;
+    spot.style.display = inPane ? "block" : "none";
+    if (inPane) draw(spot, sp.walk[idx], pal, 3, false, null);
+    // the three cards
+    ["original", "cat", "dog"].forEach(function (id) {
+      var c = cardCanvas[id], f = SPRITES[id].walk[reduced ? 1 : Math.floor(now / 125) % 4];
+      draw(c, f, PAL[id], 6, false, null);
+    });
+    requestAnimationFrame(render);
+  }
+  var sigspotCanvas = document.createElement("canvas");
+  sigspotCanvas.style.imageRendering = "pixelated";
+  sigspot.appendChild(sigspotCanvas);
+
+  function tween(id, ms, fn) {
+    return new Promise(function (res) {
+      if (reduced) { fn(1); return res(); }
+      var t0 = performance.now();
+      (function step(now) {
+        if (id !== runId) return res();
+        var k = Math.min(1, (now - t0) / ms); fn(k);
+        if (k < 1) requestAnimationFrame(step); else res();
+      })(t0);
+    });
+  }
+  function wait(id, ms) { return tween(id, ms, function () {}); }
+  function lerp(a, b, k) { return a + (b - a) * k; }
+  var ease = function (k) { return k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; };
+
+  function moveTo(id, ms, x, y, scale, arc) {
+    var x0 = pet.x, y0 = pet.y, s0 = pet.scale;
+    pet.face = x >= x0 ? 1 : -1;
+    return tween(id, ms, function (k) {
+      var e = ease(k);
+      pet.x = lerp(x0, x, e); pet.y = lerp(y0, y, e); pet.scale = Math.max(2, Math.round(lerp(s0, scale, e)));
+      pet.hop = arc ? Math.sin(Math.PI * k) * arc : 0;
+    }).then(function () { pet.hop = 0; });
+  }
+
+  async function run() {
+    var id = ++runId, S = sizes(), sc = S.sc, floorY = S.H * 0.935;
+    pet.bubble = ""; pet.zzz = false; pet.pose = "walk"; pet.hop = 0; pet.hidden = true;
+    sigPaint(false);
+    var w = document.getElementById("win").getBoundingClientRect(), s = stage.getBoundingClientRect();
+    var paneRightX = w.right - s.left, winBottomY = w.bottom - s.top;
+    await wait(id, reduced ? 0 : 1100);
+    if (id !== runId) return;
+    // step out of the pane box
+    var a = anchorOf(sigspot);
+    pet.x = a.x; pet.y = a.y; pet.scale = 3; pet.face = 1; pet.hidden = false; sigPaint(true);
+    await moveTo(id, 700, a.x + S.W * 0.02, a.y - S.H * 0.02, 3.5, S.H * 0.04);
+    // run along the bottom edge of the terminal window, then jump down to the floor
+    await moveTo(id, 900, paneRightX - S.W * 0.04, winBottomY - 2, sc * 0.8, 0);
+    await moveTo(id, 600, paneRightX + S.W * 0.05, floorY, sc, S.H * 0.09);
+    if (id !== runId) return;
+    var st = pick.state;
+    if (st === "walking") {
+      while (id === runId) {
+        await moveTo(id, 2600, S.W * 0.93, floorY, sc, 0);
+        await moveTo(id, 3800, S.W * 0.14, floorY, sc, 0);
+        if (reduced) break;
+      }
+    } else if (st === "waiting") {
+      await moveTo(id, 1000, paneRightX + S.W * 0.015, floorY, sc, 0);
+      pet.face = -1; pet.pose = "stand"; pet.bubble = "⚠ Bash is waiting for your approval";
+    } else if (st === "failed") {
+      await moveTo(id, 900, S.W * 0.62, floorY, sc, 0);
+      pet.pose = "fall";
+    } else if (st === "idle") {
+      await moveTo(id, 1600, S.W * 0.12, floorY, sc, 0);
+      pet.pose = "sleep"; pet.zzz = true;
+    } else if (st === "done") {
+      await moveTo(id, 1000, S.W * 0.6, floorY, sc, 0);
+      pet.pose = "stand";
+      for (var j = 0; j < 2 && id === runId; j++) { await tween(id, 500, function (k) { pet.hop = Math.sin(Math.PI * k) * S.H * 0.09; }); pet.hop = 0; }
+      pet.pose = "walk";
+      await moveTo(id, 2400, S.W + 40, floorY, sc, 0);
+      pet.hidden = true; sigPaint(false);
+    }
+  }
+
+  /* ---------- wiring ---------- */
+  function setPressed(container, attr, value) {
+    container.querySelectorAll("button").forEach(function (b) { b.setAttribute("aria-pressed", b.dataset[attr] === value ? "true" : "false"); });
+  }
+  document.getElementById("petPick").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    pick.pet = b.dataset.pet; setPressed(this, "pet", pick.pet); setPressed(cardsEl, "pet", pick.pet); run();
+  });
+  document.getElementById("statePick").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    pick.state = b.dataset.state; setPressed(this, "state", pick.state); run();
+  });
+  cardsEl.addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    pick.pet = b.dataset.pet; setPressed(document.getElementById("petPick"), "pet", pick.pet); setPressed(cardsEl, "pet", pick.pet); run();
+  });
+  document.getElementById("replay").addEventListener("click", run);
+  window.addEventListener("resize", function () { run(); });
+
+  sigPaint(false);
+  requestAnimationFrame(render);
+  run();
+})();
+</script>
+</body>
+</html>

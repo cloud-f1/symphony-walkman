@@ -1,7 +1,7 @@
 # Walkman Pet: the green man as a desktop pet (plan, 2026-11-07)
 
-**Status: a plan. Nothing is built and the owner has not approved it.** Section 9 lists what the owner has to decide
-before any code is written.
+**Status: a plan, route A plus a state file chosen by the owner on 2026-11-07; no app code is written yet.** P0 (the look) is
+`docs/pet-demo.html`. Section 9 lists the decisions made and the ones still open.
 
 ## 1. What was asked
 
@@ -22,6 +22,24 @@ the desktop, as [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk)
   rights reserved by its artists (Clawd belongs to Anthropic; Calico and Cloudling to their author). Consequences:
   copying its code would put our code under AGPL, and none of its sprites may be reused. Talking to it over HTTP, or
   shipping a theme of our own drawing, does not copy anything.
+
+### Is it a separate app, or a Claude Code Mod? (checked in its source, 2026-11-07)
+
+**A separate app.** Its `package.json` has `main: src/main.js`, `electron` and `electron-builder` (macOS `dmg` and `zip`,
+appId `com.clawd.on-desk`) and `electron-updater`; releases are installers. It is not a Claude Code plugin or Mod: the repo
+has no root `.claude-plugin`, and its `.claude-plugin` and `plugin.json` mentions are about installing *other* tools' plugins
+(MiniMax, Hermes, OpenClaw). Its own `AGENTS.md` describes it as an Electron desktop pet that senses agents "through hooks,
+log polling, plugins and extensions".
+
+How it listens to Claude Code: it writes **command hooks** into Claude Code's settings (`hooks/clawd-hook.js` reads the
+hook's stdin JSON and posts it to the app's local port), and it maps events to animations (`SessionStart` idle,
+`PreToolUse` and `PostToolUse` working, `Stop` attention, `SubagentStart` juggling, `Notification` notification,
+`PostToolUseFailure` and `StopFailure` error). It also ships a statusline script that reads rate limits and context from the
+statusline JSON, and a VS Code extension that jumps back to the terminal.
+
+On authorship: `CLAUDE.md` in that repo is a one-line pointer to `AGENTS.md`, so it is set up for coding agents, and 1 of
+its last 100 commits carries a `Co-Authored-By: Claude` trailer. That does not show how much of it was written with Claude;
+this plan does not rely on it.
 
 ## 3. What limits us in this repo
 
@@ -47,8 +65,8 @@ the desktop, as [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk)
 | D. Terminal only | Draw the cat and the dog as pane sprites. | Cheap. | Not on the screen: not what was asked. |
 | E. Fork Clawd | Copy its code. | Fastest to something running. | Our code becomes AGPL; its art cannot be reused. Not recommended. |
 
-**Recommendation: A first (A needs nothing from the Mod), keep C as the cheap fallback if the owner would rather install
-Clawd than own an app, and decide B only after seeing A run.**
+**Chosen (2026-11-07): A, with B.** The owner picked route A and agreed that the Mod may write a small state file. C stays
+as the fallback if an own app proves too much work.
 
 ## 5. The three pets
 
@@ -109,20 +127,29 @@ The pane never reports where it is on the screen, so the exit is an effect, not 
 - **A stale subagent** keeps a card walking up to 12 hours (WALK-276); the pet inherits that cap.
 - **Art:** the cat and the dog are new drawings; nothing is taken from Clawd, Calico or Cloudling.
 
-## 9. Decisions for the owner
+## 9. Decisions
 
-1. Which route: **A** (own app, recommended) or **C** (Clawd themes plus a relay)?
-2. For A: **Electron** (reuses `core/`), **Tauri**, or **Swift** (macOS only)?
+Made by the owner on 2026-11-07:
+
+1. **Route A**: an own companion app, not Clawd themes.
+4. **The Mod may write a small state file** (option B), so the pet can show the reason, the steps and the title. This is a
+   change to the Mod's read-only rule and is *not yet implemented*. When it is, three things change together: the rule in
+   `skills/developing-walkman/SKILL.md`, a release-gate check that the Mod writes only that one file and nothing else, and
+   the README's "what it touches" text. The file lives outside every repo (for example `~/.walkman/state.json`) and holds
+   no secret: card key, light, the reason, steps, since-time, nothing from Jira beyond the title the pane already shows.
+
+Still open:
+
+2. **Electron** (reuses `core/`), **Tauri**, or **Swift** (macOS only)? The plan leans to Electron.
 3. Where does it live: a `pet/` folder in this repo, or a new repo (the app is not a plugin)?
-4. May the Mod write a small state file (option B), or does the pet stay on the session records only?
 5. Default: pet off until switched on, or on whenever the companion runs?
-6. Who draws the cat and the dog: we draw our own pixel art (the plan assumes this).
+6. The cat and the dog are our own pixel art (the plan assumes this); P0 shows a first version of each.
 
 ## 10. Phases and what "done" means
 
 | Phase | Work | Done when |
 |---|---|---|
-| P0 | Design sheet and a clickable web demo of the three pets walking, the states, and the run across a mock screen | the owner picks the look of each pet |
+| P0 | Design sheet and a clickable web demo of the three pets walking, the states, and the run across a mock screen. **Built:** `docs/pet-demo.html` (open it in a browser; no server needed) | the owner picks the look of each pet |
 | P1 | Companion MVP: one pet, original style, walks while a card walks, reads session records | on the owner's Mac the pet runs while a card runs and stops when it does (real session, not a mock) |
 | P2 | Cat and dog sprites, all five states, bubbles, click to focus the terminal, several pets | each state seen on screen |
 | P3 | Settings, the exit effect, optional window-frame lookup, optional state file (B) | the owner signs off the behaviour |
