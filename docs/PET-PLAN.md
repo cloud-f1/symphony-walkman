@@ -192,7 +192,7 @@ Still open: who creates `walkman-pet` (owner, or this session on a clear go).
 | P0 | Design sheet and a clickable web demo of the three pets walking, the states, and the run across a mock screen. **Built:** `docs/pet-demo.html` (open it in a browser; no server needed) | the owner picks the look of each pet |
 | P1 | Companion MVP: one pet, original style, walks while a card walks, reads session records. **Built:** the Mod writes the state file (v0.18.0, WALK-292); the app is `cloud-f1/walkman-pet` (private), started from `tauri-app-template` | on the owner's Mac the pet runs while a card runs and stops when it does (real session, not a mock). **Not yet:** only a state file written by the Mod's own builder was read, no real session has written one |
 | P2 | Cat and dog sprites, all five states, bubbles, click to focus the terminal, several pets. **Built:** the pane's real side-view man, the cat, the dog, a bubble for an ask or a failure, a right-click menu to choose the pet and to quit (WALK-299) | each state seen on screen. **Not yet:** click to focus the terminal; several pets at once; the cat and the original man asking or failed were not looked at |
-| P3 | Settings, the exit effect, optional window-frame lookup, optional state file (B) | the owner signs off the behaviour |
+| P3 | Settings, the exit effect, optional window-frame lookup, optional state file (B). **Built (2026-11-08, as the owner asked):** click the pet to bring the card's terminal forward (WALK-304), `/walkman pet on|off|status` and the `own` mark in the state file (v0.19.0, WALK-307), an unsigned macOS `.dmg` (WALK-310). **Not built:** settings, the exit effect, the window-frame lookup | the owner signs off the behaviour. **Not yet:** the owner has not used it from a real session |
 | P4 | Packaging and a short install guide; a line in the README | a clean install on a second Mac works |
 
 ### P1 spike list (run first, each is a yes or no on the owner's Mac)
@@ -215,12 +215,17 @@ A spike is a small throwaway app from the template; nothing here ships. "Cannot 
 | Piece | Where | State |
 |---|---|---|
 | State file writer | this repo, `core/petstate.ts` and `writePetState` in `hooks/register.ts`, v0.18.0, gate `auditWrites` | released; one file per session; a real session writing it has **not** been seen (the owner's Claude Code was not yet on 0.18.0) |
-| The pet app | `cloud-f1/walkman-pet` (private), Tauri 2, 23 TypeScript and 3 Rust tests | runs on the owner's Mac as a debug build; the man running, the dog running and lying down, the menu, Dog, Quit were seen; no installer |
-| Not built | | click to focus the terminal; `/walkman pet on|off` (needs an installed app to start); an installer; several pets at once; settings; the exit effect |
+| The pet app | `cloud-f1/walkman-pet` (private), Tauri 2, 30 TypeScript and 11 Rust tests | runs on the owner's Mac (debug and release); the man running, the dog running and lying down, the menu, Dog, Quit, and one click bringing Ghostty to the front from Claude (a real session id, a synthetic click) were seen |
+| Terminal focus | `src-tauri/src/focus.rs` | best effort: the terminal **app** comes forward, not the tab or window; with an older Mod two sessions listing one card can pick the wrong session, `own` (v0.19.0) fixes that once a real session writes it |
+| Pet control | this repo, `core/petcontrol.ts`, v0.19.0 | `open -a`, `pkill -x`, `pgrep -x` were run against the real app and exited as the Mod expects; on a Mac that built the app `open -a "Walkman Pet"` already finds it in the build folder |
+| Installer | `npm run build:mac` in walkman-pet | `.dmg` 1.86 MiB, checksum valid, ad-hoc signed only; release build 0.2 to 0.9 % CPU and about 20 MB (the app process, not WebKit's web-content process); not tried on a second Mac |
+| Not built | | several pets at once; settings; the exit effect; signing and notarising; an app icon of its own |
 
-Two things found while building that the plan did not say: the app's first man was drawn from memory (a front view) and was replaced
-by the pane's own bitmaps (the README had claimed they were the same); and a click on the menu within about 50 ms of opening it falls
-through to the window below, because the window needs one 50 ms tick to start taking clicks.
+Things found while building that the plan did not say: the app's first man was drawn from memory (a front view) and was replaced
+by the pane's own bitmaps (the README had claimed they were the same); a click on the menu within about 50 ms of opening it falls
+through to the window below, because the window needs one 50 ms tick to start taking clicks; macOS spends the first click on a
+background app just activating it, so without `acceptFirstMouse` a click on the pet never reached the page; a drag region swallows a
+click, so the drag is started by hand after 4 px; a state file is stale after 90 s, which a test that waits longer must keep refreshing.
 
 ### P1 spike results (WALK-288, 2026-11-08, the owner's Mac, a throwaway app outside every repo)
 
