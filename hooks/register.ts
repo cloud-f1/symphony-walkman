@@ -22,6 +22,7 @@ import { SCENES, demoRows } from '../core/demo.ts'
 import { touchedWorktree } from '../core/touch.ts'
 import { playgroundSvg } from '../core/tracksvg.ts'
 import { PET_BEAT_MS, buildPetState, petStateKey, petStatePath, petStateText } from '../core/petstate.ts'
+import { PET_ARGV, PET_USAGE, parsePetAction, petReply } from '../core/petcontrol.ts'
 import { isRecordName, otherSessionLights, ownShellSince, parsePs, parseRecord, parseTasklist } from '../core/sessions.ts'
 import type { SessionRecord } from '../core/sessions.ts'
 import { CARD_CELLS, boardGrid } from '../core/boardgrid.ts'
@@ -579,7 +580,9 @@ async function writePetState($: Engine, beat = false): Promise<void> {
     const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE')) || ''
     const path = petStatePath(home, id)
     if (!path) return
-    const state = buildPetState(id, await $.clock.now(), cache.rows)
+    // the worktrees this session itself works in: where it is now and where its own signals are
+    const own = [currentTree, ...[...live].filter(([, s]) => s.isWorking || s.askPending || s.lastTurnFailed).map(([p]) => p)]
+    const state = buildPetState(id, await $.clock.now(), cache.rows, own)
     const key = petStateKey(state)
     if (beat || key !== petKey) {
       await $.fs.write(path, petStateText(state))
@@ -589,6 +592,19 @@ async function writePetState($: Engine, beat = false): Promise<void> {
     petBeat = state.cards.length > 0 ? $.clock.after(PET_BEAT_MS, () => { petBeat = undefined; void writePetState($, true) }) : undefined
   } catch (err) {
     note(`pet state failed: ${String(err).slice(0, 100)}`)
+  }
+}
+
+// /walkman pet [on|off]: only what the person typed runs, with fixed arguments (core/petcontrol.ts).
+async function petControl($: Engine, arg: string | undefined): Promise<string> {
+  const action = parsePetAction(arg)
+  if (!action) return PET_USAGE
+  try {
+    const uname = await $.process.run(['uname', '-s'], { timeoutMs: 1500 })
+    if (uname.exitCode !== 0 || uname.stdout.trim() !== 'Darwin') return petReply(action, undefined, false)
+    return petReply(action, await $.process.run(PET_ARGV[action], { timeoutMs: 5000 }), true)
+  } catch {
+    return petReply(action, undefined, true)
   }
 }
 
@@ -732,6 +748,7 @@ export function register(on: On, options?: PluginOptions) {
       await refresh($)
       return { text: ['Walkman debug', `rows: ${cache.rows.map((r) => r.key + ':' + r.light + '@' + r.worktree).join(', ') || '(none)'}`, `live: ${[...live.entries()].map(([k, v]) => k + '=' + JSON.stringify(v)).join('; ') || '(none)'}`, `read: ${cache.why ?? '(none)'}`, `band renders: ${renders}`, `other sessions: ${othersNote}`, `jira: ${jira.issues.length} issues, last read ${jira.at === -Infinity ? 'never' : 'ok'}${jira.error ? ', error ' + jira.error : ''}`, `board: ${boardState.board ? `${boardState.project} ${boardState.board.columns.length} columns, ${boardState.board.open} open, ${boardState.board.done.count} done` : 'none'}${boardState.error ? ', error ' + boardState.error : ''}`,...trace].join('\n') }
     }
+    if (sub === 'pet') return { text: await petControl($, arg) }
     if (sub === 'version') return { text: await versionText($) }
     if (sub === 'doctor') return { text: await doctorText($) }
     if (sub === 'help') return { text: ['Walkman', HELP, 'Set up Jira linking: ' + SETUP_COMMAND, plain(LEGEND)].join('\n') }

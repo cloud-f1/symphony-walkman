@@ -24,7 +24,7 @@ export const LEGEND: Line = [
 ]
 // Every /walkman argument, for the hint the prompt shows; a check keeps it and HELP in step (0.14.0 added demo to
 // HELP but not to the hint).
-export const SUBCOMMANDS = ['board', 'board print', 'demo', 'pane', 'pane close', 'doctor', 'version', 'help', 'debug'] as const
+export const SUBCOMMANDS = ['board', 'board print', 'demo', 'pane', 'pane close', 'doctor', 'pet', 'pet on', 'pet off', 'version', 'help', 'debug'] as const
 export const HELP = [
   '/walkman              colored side pane (board if there is no room)',
   '/walkman board        Jira board pane: columns side by side, h / l move them',
@@ -32,6 +32,9 @@ export const HELP = [
   '/walkman demo         seven scenes of made-up cards to watch every animation (d: next)',
   '/walkman pane close   close the pane',
   '/walkman doctor       check the Jira link, credentials file, uvx and worktrees',
+  '/walkman pet          is the desktop pet running?',
+  '/walkman pet on       start the desktop pet (the app Walkman Pet, macOS)',
+  '/walkman pet off      stop it',
   '/walkman version      plugin, symphony-workflow and Claude Code versions',
   '/walkman help         these commands and the legend',
 ].join('\n')

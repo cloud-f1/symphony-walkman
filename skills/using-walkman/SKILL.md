@@ -17,6 +17,7 @@ A model cannot run slash commands. Answer from what you know, then tell the user
 | The same as text in the conversation | `/walkman board print` |
 | Why something is empty or stale | `/walkman doctor` |
 | To see every animation without real work | `/walkman demo`, then `d` for the next scene |
+| The desktop pet | `/walkman pet` (is it running?), `/walkman pet on`, `/walkman pet off` (macOS, the app Walkman Pet from cloud-f1/walkman-pet) |
 | Versions | `/walkman version`; legend: `/walkman help` |
 
 Outside a session: `npx --yes github:cloud-f1/symphony-walkman doctor` checks the setup, `... card KEY-n` creates a card worktree, `... configure --dry-run` plans the Jira project for every repo in a folder.

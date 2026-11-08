@@ -8,7 +8,7 @@ const PORCELAIN =
 const DF = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/d 488245288 400000000 77594624 84% /\n'
 
 type Issue = { key: string; status: string; summary: string; assignee: string | null }
-interface Setup { writes?: { path: string; text: string }[]; porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean; cwd?: { v: string }; dirs?: Record<string, string[]>; alive?: string; agents?: unknown[]; reads?: string[]; tasklist?: string }
+interface Setup { runs?: string[][]; petExit?: Record<string, number>; uname?: string; writes?: { path: string; text: string }[]; porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean; cwd?: { v: string }; dirs?: Record<string, string[]>; alive?: string; agents?: unknown[]; reads?: string[]; tasklist?: string }
 
 function stubs(on: any, setup: Setup = {}) {
   const files = setup.files ?? {}
@@ -49,6 +49,8 @@ function stubs(on: any, setup: Setup = {}) {
       return { value: { exitCode: setup.jiraExit ?? 0, stdout: JSON.stringify({ issues: setup.board?.[cat] ?? [] }), stderr: setup.jiraExit ? 'Jira API error 401' : '' } }
     }
     if (cmd === 'uv' || cmd === 'uvx') { jiraCalls.push(e.argv.join(' ')); if (e.init?.env) jiraEnvs.push(e.init.env); return { value: { exitCode: setup.jiraExit ?? 0, stdout: setup.jiraOut ?? '', stderr: setup.jiraExit ? 'Jira API error 401' : '' } } }
+    if (cmd === 'uname') return { value: { exitCode: 0, stdout: (setup.uname ?? 'Darwin') + '\n', stderr: '' } }
+    if (cmd === 'open' || cmd === 'pkill' || cmd === 'pgrep') { setup.runs?.push(e.argv); return { value: { exitCode: setup.petExit?.[cmd] ?? 0, stdout: '', stderr: '' } } }
     if (cmd === 'claude') return { value: { exitCode: 0, stdout: '2.1.296 (Claude Code)\n', stderr: '' } }
     if (cmd === 'uvx' && a === '--version') return { value: { exitCode: 0, stdout: 'uvx 0.9\n', stderr: '' } }
     if (cmd === 'ps') return { value: { exitCode: 0, stdout: setup.alive ?? '', stderr: '' } }
@@ -120,9 +122,55 @@ test('the pet state file: written when a card runs, again when it stops, and now
   expect(running.schema).toBe(1)
   expect(running.session).toBe('me')
   expect(running.cards.map((c: any) => c.key + ':' + c.light)).toEqual(['CF1-195:walking'])
+  expect(running.cards[0].own).toBe(true) // the session's own worktree: the pet may bring this terminal forward
+  expect(writes.some((w) => w.text.includes('/r/'))).toBe(false)
   await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'end_turn' })
   await new Promise((r) => setTimeout(r, 30))
   expect(JSON.parse(writes[writes.length - 1].text).cards).toEqual([])
+})
+
+test('/walkman pet on, off and status run fixed commands and say what happened', async ($, on) => {
+  const runs: string[][] = []
+  stubs(on, { runs })
+  expect((await walkman($, 'pet on')).text).toContain('pet is on')
+  expect((await walkman($, 'pet off')).text).toContain('pet is off')
+  expect((await walkman($, 'pet')).text).toContain('is running')
+  expect(runs).toEqual([['open', '-a', 'Walkman Pet'], ['pkill', '-x', 'walkman-pet'], ['pgrep', '-x', 'walkman-pet']])
+})
+
+test('/walkman pet on says how to build the app when macOS cannot find it; off says it was not running', async ($, on) => {
+  stubs(on, { petExit: { open: 1, pkill: 1, pgrep: 1 } })
+  const on1 = (await walkman($, 'pet on')).text
+  expect(on1).toContain('not installed')
+  expect(on1).toContain('npm run build:mac')
+  expect((await walkman($, 'pet off')).text).toContain('was not running')
+  expect((await walkman($, 'pet')).text).toContain('not running')
+})
+
+test('/walkman pet with another word runs nothing', async ($, on) => {
+  const runs: string[][] = []
+  stubs(on, { runs })
+  expect((await walkman($, 'pet nope')).text).toContain('Usage: /walkman pet')
+  expect((await walkman($, 'pet on;rm')).text).toContain('Usage: /walkman pet')
+  expect(runs).toEqual([])
+})
+
+test('/walkman pet off macOS says so and runs nothing', async ($, on) => {
+  const runs: string[][] = []
+  stubs(on, { runs, uname: 'Linux' })
+  expect((await walkman($, 'pet on')).text).toContain('macOS only')
+  expect((await walkman($, 'pet off')).text).toContain('macOS only')
+  expect(runs).toEqual([])
+})
+
+test('the Mod never starts or stops the pet on its own: a session, a turn and a board run no open, pkill or pgrep', async ($, on) => {
+  const runs: string[][] = []
+  stubs(on, { runs })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await walkman($, 'board print')
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'end_turn' })
+  await new Promise((r) => setTimeout(r, 30))
+  expect(runs).toEqual([])
 })
 
 test('a run file is ignored until runs_dir is set (plan_ready path is NOT covered here)', async ($, on) => {
