@@ -18,6 +18,7 @@ export type PetCard = {
   title?: string
   status?: string
   agents: number
+  own?: true // this session runs the card (its worktree or its own signal); a card only seen through another session's record has no mark
 }
 export type PetState = { schema: typeof PET_STATE_SCHEMA; writtenAt: number; session: string; cards: PetCard[] }
 
@@ -37,7 +38,9 @@ const text = (s: string | undefined, max: number): string | undefined => {
 }
 
 // Only a card that walks, waits or failed is the pet's business: an idle or done card draws nothing.
-export function buildPetState(session: string, now: number, rows: readonly CardRow[]): PetState {
+// ownTrees: the worktrees this session works in. A card in one of them gets own: true, so the pet can bring the right
+// terminal forward when two sessions list the same card.
+export function buildPetState(session: string, now: number, rows: readonly CardRow[], ownTrees: readonly string[] = []): PetState {
   const cards: PetCard[] = []
   for (const r of rows) {
     if (r.light !== 'walking' && r.light !== 'waiting' && r.light !== 'failed') continue
@@ -49,6 +52,7 @@ export function buildPetState(session: string, now: number, rows: readonly CardR
     if (title) card.title = title
     if (status) card.status = status
     if (r.todo && r.todo.total > 0) card.steps = { done: r.todo.done, total: r.todo.total }
+    if (ownTrees.includes(r.worktree)) card.own = true
     cards.push(card)
   }
   return { schema: PET_STATE_SCHEMA, writtenAt: now, session, cards }

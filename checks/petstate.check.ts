@@ -33,6 +33,15 @@ test('a card carries its reason, steps, title, Jira status and the count of suba
   assert.equal('steps' in d, false)
 })
 
+test('own marks the cards of this session\'s worktrees and nothing else; the path itself never leaves the Mod', () => {
+  const rows = [row({ key: 'A-1', worktree: '/r/mine' }), row({ key: 'A-2', worktree: '/r/other' }), row({ key: 'A-3', worktree: '/r/also-mine' })]
+  const s = buildPetState('s', 1, rows, ['/r/mine', '/r/also-mine'])
+  assert.deepEqual(s.cards.map((c) => [c.key, c.own === true]), [['A-1', true], ['A-2', false], ['A-3', true]])
+  assert.equal('own' in s.cards[1], false)
+  assert.equal(buildPetState('s', 1, rows).cards.some((c) => 'own' in c), false) // no trees given: no mark
+  assert.equal(petStateText(s).includes('/r/'), false)
+})
+
 test('a write is skipped while only the written-at time changed', () => {
   const a = buildPetState('s', 1, [row({})])
   const b = buildPetState('s', 99, [row({})])
