@@ -65,3 +65,23 @@ test('the file text holds no tool input, path or secret: only the fields the pan
   assert.equal(text.includes('secret'), false)
   assert.equal(text.includes('/Users'), false)
 })
+
+// docs/petstate.example.json is the one example of the format, shared with the pet (cloud-f1/walkman-pet keeps a copy at
+// src/domain/petstate.example.json). Both repos pin the same hash: a change to the format means editing the file and the
+// hash here AND there, so the other side's test fails until it follows.
+const EXAMPLE_SHA256 = '5c4dac53c91c9d8269c3bf7e343b6cdbd7db9da932ee87bb7618eec956006f89'
+
+test('the shared example is exactly what buildPetState writes, and the pet-side copy must carry the same hash', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { createHash } = await import('node:crypto')
+  const raw = readFileSync(new URL('../docs/petstate.example.json', import.meta.url), 'utf8')
+  assert.equal(createHash('sha256').update(raw).digest('hex'), EXAMPLE_SHA256)
+  const rows = [
+    row({ key: 'CAN-812', light: 'waiting', sinceMs: 999000, why: 'Bash is waiting for your approval', title: 'Gate: e2e video', jiraStatus: 'In Progress' }),
+    row({ key: 'CAN-7', light: 'walking', sinceMs: 990000, worktree: '/r/mine', todo: { done: 2, total: 5 }, agents: [{ type: 'g', task: 't', light: 'walking', sinceMs: 1 }, { type: 'g', task: 't', light: 'walking', sinceMs: 1 }] }),
+    row({ key: 'CAN-9', light: 'failed', sinceMs: 980000 }),
+    row({ key: 'CAN-1', light: 'idle' }),
+  ]
+  assert.equal(petStateText(buildPetState('abc-1', 1000000, rows, ['/r/mine'])), raw)
+  assert.equal(readPetState(raw, 1000001)?.cards.length, 3)
+})
