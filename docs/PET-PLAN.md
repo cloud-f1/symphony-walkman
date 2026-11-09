@@ -214,7 +214,7 @@ A spike is a small throwaway app from the template; nothing here ships. "Cannot 
 
 | Piece | Where | State |
 |---|---|---|
-| State file writer | this repo, `core/petstate.ts` and `writePetState` in `hooks/register.ts`, v0.18.0, gate `auditWrites` | released; one file per session; a real session writing it has **not** been seen (the owner's Claude Code was not yet on 0.18.0) |
+| State file writer | this repo, `core/petstate.ts` and `writePetState` in `hooks/register.ts`, v0.18.0, gate `auditWrites` | released; one file per session; a real headless session writing it was seen on 2026-11-09: `walking own:true` while it generated, no card after the turn |
 | The pet app | `cloud-f1/walkman-pet` (private), Tauri 2, 30 TypeScript and 11 Rust tests | runs on the owner's Mac (debug and release); the man running, the dog running and lying down, the menu, Dog, Quit, and one click bringing Ghostty to the front from Claude (a real session id, a synthetic click) were seen |
 | Terminal focus | `src-tauri/src/focus.rs` | best effort: the terminal **app** comes forward, not the tab or window; with an older Mod two sessions listing one card can pick the wrong session, `own` (v0.19.0) fixes that once a real session writes it |
 | Pet control | this repo, `core/petcontrol.ts`, v0.19.0 | `open -a`, `pkill -x`, `pgrep -x` were run against the real app and exited as the Mod expects; on a Mac that built the app `open -a "Walkman Pet"` already finds it in the build folder |
@@ -226,6 +226,10 @@ by the pane's own bitmaps (the README had claimed they were the same); a click o
 through to the window below, because the window needs one 50 ms tick to start taking clicks; macOS spends the first click on a
 background app just activating it, so without `acceptFirstMouse` a click on the pet never reached the page; a drag region swallows a
 click, so the drag is started by hand after 4 px; a state file is stale after 90 s, which a test that waits longer must keep refreshing.
+
+### Real-session check, 2026-11-09 (WALK-317)
+
+A real headless session (this repo as the plugin, v0.19.0, in a card worktree) wrote the state file with the card walking and `own: true`, and an empty file when the turn ended; the running pet window drew a running figure at that time. A click on the pet did not bring the terminal forward in that run (the app in front afterwards was another one); the cause was not found, so the click is **not verified** with a release build and a real session. A long `sleep` is moved to the background by Claude Code and ends the turn at once, so a check must use a task that keeps generating.
 
 ### P1 spike results (WALK-288, 2026-11-08, the owner's Mac, a throwaway app outside every repo)
 
