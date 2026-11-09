@@ -1,0 +1,1 @@
+{"schema":1,"writtenAt":1000000,"session":"abc-1","cards":[{"key":"CAN-812","light":"waiting","sinceMs":999000,"agents":0,"why":"Bash is waiting for your approval","title":"Gate: e2e video","status":"In Progress"},{"key":"CAN-7","light":"walking","sinceMs":990000,"agents":2,"steps":{"done":2,"total":5},"own":true},{"key":"CAN-9","light":"failed","sinceMs":980000,"agents":0}]}
