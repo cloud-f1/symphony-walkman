@@ -22,6 +22,8 @@ import { SCENES, demoRows } from '../core/demo.ts'
 import { touchedWorktree } from '../core/touch.ts'
 import { playgroundSvg } from '../core/tracksvg.ts'
 import { PET_BEAT_MS, buildPetState, petStateKey, petStatePath, petStateText } from '../core/petstate.ts'
+import { localDay, parsePetToday, petTodayLine, petTodayPath } from '../core/pettoday.ts'
+import type { PetToday } from '../core/pettoday.ts'
 import { PET_ARGV, PET_USAGE, parsePetAction, petReply } from '../core/petcontrol.ts'
 import { isRecordName, otherSessionLights, ownShellSince, parsePs, parseRecord, parseTasklist } from '../core/sessions.ts'
 import type { SessionRecord } from '../core/sessions.ts'
@@ -139,6 +141,22 @@ async function readDisk($: Engine): Promise<Disk | undefined> {
   } catch {
     return undefined
   }
+}
+
+// The desktop pet's tally for today (core/pettoday.ts): read at most twice a minute, since the pane redraws up to four
+// times a second; nothing when the pet does not run or the file is not today's. A read only, never a write.
+const PET_TODAY_READ_MS = 30_000
+let petToday: { at: number; value?: PetToday } = { at: -Infinity }
+async function readPetToday($: Engine, now: number): Promise<PetToday | undefined> {
+  if (now - petToday.at < PET_TODAY_READ_MS) return petToday.value
+  petToday = { at: now }
+  try {
+    const file = petTodayPath((await $.env.get('HOME')) || (await $.env.get('USERPROFILE')) || '')
+    if (file && (await $.fs.exists(file))) petToday.value = parsePetToday(await $.fs.read(file), now, localDay(new Date(now)))
+  } catch {
+    // no tally line, never a crash
+  }
+  return petToday.value
 }
 
 let inflight: Promise<void> | undefined
@@ -857,7 +875,8 @@ export function register(on: On, options?: PluginOptions) {
     // in a demo scene the made-up cards stand in for the real ones; the Jira line and lane are left out
     if (demo > 0 && demoBegan < 0) demoBegan = now
     const v = demo > 0 ? { rows: demoRows(demo, demoBegan, now), others: [] as JiraIssue[] } : view()
-    const top = boardState.board && demo === 0 ? [boardOverview(boardState.board, now - boardState.at, width - 2)] : []
+    const today = demo === 0 ? await readPetToday($, now) : undefined
+    const top = [...(boardState.board && demo === 0 ? [boardOverview(boardState.board, now - boardState.at, width - 2)] : []), ...(today ? [petTodayLine(today)] : [])]
     const demoButton = Button
       ? h(Button, { key: 'demo', label: demo === 0 ? 'demo ▸' : demo < SCENES.length ? 'next ▸' : 'exit ▸', hotkey: 'd', plain: true, dimColor: true, onPress: redraw(() => {
         demo = demo >= SCENES.length ? 0 : demo + 1
