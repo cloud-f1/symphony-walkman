@@ -11,6 +11,9 @@ import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 
 export const SW_GIT = 'git+https://github.com/cloud-f1/symphony-workflow@v0.12.0' // bump with symphony-workflow releases
+// Lookups run the uv tool install offline (never a git+ source at run time: a cold resolve takes minutes, and a
+// killed one leaves a ~200 MB temp env in uv's cache). Kept equal to core/version.ts by checks/release.check.ts.
+export const SW_PIN = 'symphony-workflow==' + SW_GIT.split('@v')[1]
 export const WALKMAN_MARKETPLACE = 'cloud-f1/symphony-walkman'
 export const WALKMAN_PLUGIN = 'symphony-walkman@symphony-walkman' // its marketplace also lists symphony-workflow-ops, so one install pulls both
 export const SW_PLUGIN = 'symphony-workflow-ops@symphony-walkman'
@@ -109,7 +112,7 @@ export function planSetup(s) {
     if (s.migrateFrom) steps.push({ id: 'migrate', title: `Copy only ${REQUIRED_ENV.join(', ')} from ${s.migrateFrom}/.env to ${s.envFile} (mode 600; values are not shown)` })
     else steps.push({ id: 'env', title: `Create ${s.envFile} (mode 600) for the Jira credentials (you fill in the values)`, manual: true })
   }
-  if (s.uv && !s.uvxWarm) steps.push({ id: 'warm', title: 'Download the symphony-workflow CLI once (about 95 MB) so lookups are fast', run: [['uvx', ['--from', SW_GIT, 'symphony-workflow', '--help']]] })
+  if (s.uv && !s.swInstalled) steps.push({ id: 'install', title: `Install the symphony-workflow CLI ${SW_GIT.split('@')[1]} once as a uv tool (about 95 MB; uv cache clean keeps it)`, run: [['uv', ['tool', 'install', '--force', '--from', SW_GIT, 'symphony-workflow']]] })
   if (s.project && s.projectSetting !== s.project) steps.push({ id: 'project', title: `Set WALKMAN_JIRA_PROJECT=${s.project} in ${s.repo}/.claude/settings.json`, write: { file: join(s.repo, '.claude', 'settings.json'), name: 'WALKMAN_JIRA_PROJECT', value: s.project } })
   return steps
 }
@@ -260,8 +263,8 @@ function gather(repo, flags) {
     claude: claude.ok, claudeVersion: claude.ok ? claude.out.trim().split(/\s+/)[0] : '',
     walkmanInstalled: pluginInstalled(list, 'symphony-walkman'),
     swPluginInstalled: pluginInstalled(list, 'symphony-workflow-ops'),
-    uv, // cached runs answer in about 2s; a cold download is much slower, so a short timeout tells them apart
-    uvxWarm: uv && run('uvx', ['--from', SW_GIT, 'symphony-workflow', '--help'], { timeout: 12000 }).ok,
+    uv,
+    swInstalled: uv && run('uvx', ['--offline', '--from', SW_PIN, 'symphony-workflow', '--help'], { timeout: 12000 }).ok, // offline: never downloads
     legacyDir, envFile, credsPresent, envHasAnsi,
     envMissing: credsPresent ? missingEnv(names) : REQUIRED_ENV, envFilled: credsPresent && missingEnv(names).length === 0,
     migrateFrom: !legacyDir && !existsSync(envFile) && cloneFilled ? clone : '',
@@ -272,10 +275,10 @@ function gather(repo, flags) {
   }
 }
 
-// The read-only search, either from a clone you configured (the older way) or the released CLI through uvx.
+// The read-only search, either from a clone you configured (the older way) or the installed release through uvx --offline.
 export function searchCommand(s, jql) {
   if (s.legacyDir) return ['uv', ['run', '--env-file', '.env', 'symphony-workflow', 'search', jql], s.legacyDir]
-  return ['uvx', ['--env-file', s.envFile, '--from', SW_GIT, 'symphony-workflow', 'search', jql]]
+  return ['uvx', ['--offline', '--env-file', s.envFile, '--from', SW_PIN, 'symphony-workflow', 'search', jql]]
 }
 
 function lookup(s, project) {
@@ -302,7 +305,7 @@ export function checks(s, withLookup) {
   add(s.uv ? 'ok' : 'bad', s.uv ? 'uv installed' : 'uv not found', 'install uv: https://docs.astral.sh/uv/')
   if (s.envHasAnsi) add('bad', `Jira credentials file ${s.legacyDir ? join(s.legacyDir, '.env') : s.envFile} has terminal color codes, so uv cannot read it`, `strip them: perl -pi -e 's/\\e[[][0-9;]*[mK]//g' ${s.legacyDir ? join(s.legacyDir, '.env') : s.envFile}`)
   else add(s.envFilled ? 'ok' : 'warn', s.envFilled ? `Jira credentials file: ${s.legacyDir ? join(s.legacyDir, '.env') : s.envFile} (values not shown)` : s.credsPresent ? `Jira credentials file ${s.envFile} is missing: ${s.envMissing.join(', ')}` : `no Jira credentials file at ${s.envFile}${s.migrateFrom ? ` (setup can copy them from ${s.migrateFrom}/.env)` : ''}`, `run: npx --yes github:cloud-f1/symphony-walkman setup (an Atlassian API token: https://id.atlassian.com/manage-profile/security/api-tokens)`)
-  if (!s.legacyDir) add(s.uvxWarm ? 'ok' : 'warn', s.uvxWarm ? 'symphony-workflow CLI is cached for uvx' : 'symphony-workflow CLI not downloaded yet (the first lookup will be slow)', 'run: npx --yes github:cloud-f1/symphony-walkman setup')
+  if (!s.legacyDir) add(s.swInstalled ? 'ok' : 'bad', s.swInstalled ? `symphony-workflow ${SW_GIT.split('@')[1]} is installed (uv tool)` : `symphony-workflow ${SW_GIT.split('@')[1]} is not installed, so lookups fail`, `run: uv tool install --force --from ${SW_GIT} symphony-workflow (or npx --yes github:cloud-f1/symphony-walkman setup)`)
   add(s.projectSetting ? 'ok' : 'warn', s.projectSetting ? `WALKMAN_JIRA_PROJECT=${s.projectSetting}` : `WALKMAN_JIRA_PROJECT is not set${s.inferred ? ` (git history suggests ${s.inferred.project}, ${s.inferred.count} mentions)` : ''}`, 'run: npx --yes github:cloud-f1/symphony-walkman setup')
   if (withLookup && s.envFilled && s.project) {
     const l = lookup(s, s.project)
@@ -578,7 +581,7 @@ export async function main(argv) {
     } catch {
       // an installed copy always has package.json; leave unknown otherwise
     }
-    return console.log(`symphony-walkman ${v}\nJira lookup runs symphony-workflow ${SW_GIT.split('@')[1]} through uvx\nNode ${process.versions.node}`), 0
+    return console.log(`symphony-walkman ${v}\nJira lookup runs symphony-workflow ${SW_GIT.split('@')[1]} (uv tool, through uvx --offline)\nNode ${process.versions.node}`), 0
   }
   if (cmd === 'setup') return cmdSetup(values)
   if (cmd === 'card') return cmdCard(values, rest)

@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { SW_GIT, VERSION } from '../core/version.ts'
+import { SW_GIT, SW_PIN, SW_REF, VERSION } from '../core/version.ts'
 // @ts-ignore the CLI is plain ESM JavaScript
-import { SW_GIT as CLI_SW_GIT } from '../cli/walkman.mjs'
+import { SW_GIT as CLI_SW_GIT, SW_PIN as CLI_SW_PIN } from '../cli/walkman.mjs'
 
 const json = (path: string) => JSON.parse(readFileSync(new URL('../' + path, import.meta.url), 'utf8'))
 
@@ -29,4 +29,6 @@ test('release: the version the plugin prints is the version in plugin.json', () 
 
 test('release: the Mod and the setup CLI run the same symphony-workflow release', () => {
   assert.equal(CLI_SW_GIT, SW_GIT)
+  assert.equal(CLI_SW_PIN, SW_PIN)
+  assert.equal(SW_PIN, 'symphony-workflow==' + SW_REF.replace(/^v/, ''))
 })
