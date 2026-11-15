@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 // @ts-ignore the release scripts are plain ESM JavaScript
-import { auditNoNetwork, auditPackage, auditReadOnly, auditRecordGuard, auditSecrets, auditVerified, auditWrites } from '../scripts/audit.mjs'
+import { auditNoNetwork, auditPackage, auditReadOnly, auditRecordGuard, auditSecrets, auditValidate, auditVerified, auditWrites } from '../scripts/audit.mjs'
 
 test('read-only: every symphony-workflow call the Mod makes is a search', () => {
   const good = "runSw($, settings, ['search', jql])\nrunSw($, settings, ['call', 'search_issues', JSON.stringify(x)])"
@@ -60,4 +60,24 @@ test('package: the manifest, the marketplace entry, the hooks and every skill ar
   assert.equal(auditPackage({ ...ok, marketplace: { plugins: [{ name: 'q', source: './' }] } }).length, 1)
   assert.equal(auditPackage({ ...ok, files: ['hooks/register.ts', 'skills/a/SKILL.md'] }).length, 1)
   assert.equal(auditPackage({ ...ok, skills: ['a', 'b'] }).length, 1)
+})
+
+// `claude plugin validate --strict --json`: Claude Code 2.1.323 started type-checking every .ts file without
+// allowImportingTsExtensions, so each `'./x.ts'` import is a TS5097 warning (2.1.322 passes the same tree).
+// Only that warning is let through; anything else still fails, and a report that cannot be read fails.
+test('validate: only the TS5097 .ts-import warnings are tolerated, nothing else', () => {
+  const TS5097 = { path: 'line 2, column 38', message: "error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.", code: null }
+  const file = (warnings: unknown[], errors: unknown[] = []) => ({ file: '/r/core/x.ts', type: 'hooks', errors, warnings, notes: [] })
+  const report = (contents: unknown[], success = false) => JSON.stringify({ success, strict: true, manifest: file([]), contents, advice: [] })
+  assert.deepEqual(auditValidate(report([file([])], true)), { problems: [], tolerated: 0 })
+  assert.deepEqual(auditValidate(report([file([TS5097, TS5097]), file([TS5097])])), { problems: [], tolerated: 3 })
+  const other = auditValidate(report([file([TS5097, { path: 'plugin.json', message: 'unrecognized field "foo"', code: null }])]))
+  assert.equal(other.problems.length, 1)
+  assert.match(other.problems[0], /unrecognized field/)
+  assert.match(auditValidate(report([file([], [{ path: 'x', message: 'missing name' }])])).problems[0], /missing name/)
+  const badManifest = JSON.stringify({ success: false, strict: true, manifest: file([{ path: 'm', message: 'bad manifest' }]), contents: [file([TS5097])], advice: [] })
+  assert.match(auditValidate(badManifest).problems.join(' '), /bad manifest/)
+  // failed with nothing to show for it, or not JSON at all: cannot tell, so it fails
+  assert.match(auditValidate(report([file([])], false)).problems[0], /failed without/)
+  assert.match(auditValidate('Validation failed').problems[0], /could not read/)
 })

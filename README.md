@@ -265,7 +265,7 @@ Auto-update has had reports of fetching without applying a new version in some 2
 |---|---|
 | `checks/*.check.ts` (30 tests incl. the CLI: branch parsing, light priority, run state, `df`, board, styled board and pane, SVG, release version match) | Passed |
 | `claude plugin test` (8 Mod tests on a stubbed host, terminal and desktop surfaces) | Passed |
-| `claude plugin validate --strict .` | Passed |
+| `claude plugin validate --strict .` | Passed on Claude Code 2.1.322. From 2.1.323 (checked through 2.1.325) the validator type-checks every `.ts` file and reads no tsconfig, so each `'./x.ts'` import (which Node's `--experimental-strip-types` needs) is a TS5097 warning, and `--strict` fails even on an unchanged `main`. The release gate reads `--json` and lets only TS5097 through, counting it in the report. Any other warning or error still fails it. That is how 10 real type errors in `tests/mod.test.ts` were found and fixed (2026-11-14) |
 | Real engine, headless (`claude -p --plugin-dir`, scratch repo with two card worktrees, 2026-10-11) | Passed: module loaded, all 7 event kinds registered, `turn.start` fired and ran `git`. Slash commands are not run headless, so the board output was not seen this way |
 | Real interactive terminal session, installed from the public marketplace (owner screenshots, 2026-10-11) | Passed: `/walkman board` printed both card rows with the disk line; the pane opened and closed |
 | Real interactive terminal session, scripted (a pty with a terminal emulator, `--plugin-dir`, a scratch repo with two card worktrees, 2026-10-11) | Passed: `/walkman` is in the `/` menu with its description; the pane opens with theme colors (green, red, dim) and a legend; `/walkman board` prints after the pane was open; the band shows `🟢 running` with the clock ticking 0:03, 0:07 during a real turn and goes back to idle. Found and fixed in 0.1.5: an empty board after the pane opened, and a band that stayed idle during a turn |
@@ -346,7 +346,7 @@ pnpm run release        # the same, then (only if all passed) tag vX.Y.Z, push i
 | version | the version is already tagged, or `plugin.json`, `package.json`, `core/version.ts` and `marketplace.json` disagree |
 | pin | the pinned symphony-workflow release is not a published tag, or the setup CLI pins another one |
 | tests | `pnpm test` fails (core checks and Mod tests) |
-| plugin | `claude plugin validate --strict .` fails |
+| plugin | `claude plugin validate --strict --json .` reports any error or warning other than TS5097 (the `.ts` import-path warning from Claude Code 2.1.323+, which is tolerated and counted) |
 | types | `tsc` reports an error in `core/` or `hooks/`, or TypeScript or the Mod API types are missing |
 | audit: read only | the Mod runs any symphony-workflow command other than `search` and `call search_issues` |
 | audit: writes | the Mod writes any file other than the pet state file, or uses a delete, rename or shell write |
