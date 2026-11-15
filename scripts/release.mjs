@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { auditNoNetwork, auditPackage, auditReadOnly, auditRecordGuard, auditSecrets, auditVerified, auditWrites } from './audit.mjs'
+import { auditNoNetwork, auditPackage, auditReadOnly, auditRecordGuard, auditSecrets, auditValidate, auditVerified, auditWrites } from './audit.mjs'
 import { isRecordName } from '../core/sessions.ts'
 import { SW_REF, VERSION } from '../core/version.ts'
 
@@ -24,8 +24,9 @@ const tryRun = (cmd, args, opts) => {
 const results = [] // { gate, ok, detail }
 const gate = (name, fn) => {
   try {
-    const problems = fn()
-    results.push({ gate: name, ok: problems.length === 0, detail: problems.length === 0 ? 'ok' : problems.join('; ') })
+    const out = fn() // the problems, or { problems, note } when a passing gate has something to say
+    const problems = Array.isArray(out) ? out : out.problems
+    results.push({ gate: name, ok: problems.length === 0, detail: problems.length === 0 ? 'ok' : problems.join('; '), note: Array.isArray(out) ? '' : out.note ?? '' })
   } catch (err) {
     results.push({ gate: name, ok: false, detail: 'could not check: ' + String(err.message ?? err).split('\n')[0] })
   }
@@ -68,8 +69,15 @@ gate('tests: core checks and Mod tests (pnpm test)', () => {
 })
 
 gate('plugin: claude plugin validate --strict', () => {
-  const r = tryRun('claude', ['plugin', 'validate', '--strict', '.'])
-  return r.ok ? [] : ['validate failed: ' + r.out.trim().split('\n').slice(-3).join(' | ')]
+  // stdout only: the --json report (exit 1 on any warning under --strict). See auditValidate for the one tolerance.
+  let stdout
+  try {
+    stdout = run('claude', ['plugin', 'validate', '--strict', '--json', '.'])
+  } catch (err) {
+    stdout = String(err.stdout ?? '')
+  }
+  const { problems, tolerated } = auditValidate(stdout)
+  return { problems, note: problems.length === 0 && tolerated > 0 ? `(tolerated ${tolerated} TS5097 .ts-import warnings: a Claude Code 2.1.323+ validator regression)` : '' }
 })
 
 gate('types: tsc finds no error in core/ and hooks/ (the code that ships)', () => {
@@ -105,7 +113,7 @@ const report = [
   '',
   '| Gate | Result |',
   '|---|---|',
-  ...results.map((r) => `| ${r.gate} | ${r.ok ? '✓' : '✗ ' + r.detail.replace(/\|/g, '/')} |`),
+  ...results.map((r) => `| ${r.gate} | ${r.ok ? '✓' + (r.note ? ' ' + r.note : '') : '✗ ' + r.detail.replace(/\|/g, '/')} |`),
   '',
   passed ? `All ${results.length} gates passed.` : `${results.filter((r) => !r.ok).length} of ${results.length} gates failed: not releasable.`,
   ...(verifiedRow ? ['', '### Verified for this version', '', '| What | Result |', '|---|---|', verifiedRow] : []),

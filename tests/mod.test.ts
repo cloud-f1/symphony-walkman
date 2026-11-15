@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { VERSION } from '../core/version.ts'
+declare const setTimeout: (fn: (value?: unknown) => void, ms: number) => unknown // the test lib has no DOM or Node timer types
 
 const CWD = '/r/.claude/worktrees/a'
 const PORCELAIN =
@@ -8,7 +9,7 @@ const PORCELAIN =
 const DF = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/d 488245288 400000000 77594624 84% /\n'
 
 type Issue = { key: string; status: string; summary: string; assignee: string | null }
-interface Setup { runs?: string[][]; petExit?: Record<string, number>; uname?: string; writes?: { path: string; text: string }[]; porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; jiraErr?: string; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean; cwd?: { v: string }; dirs?: Record<string, string[]>; alive?: string; agents?: unknown[]; reads?: string[]; tasklist?: string }
+interface Setup { runs?: string[][]; petExit?: Record<string, number>; uname?: string; writes?: { path: string; text: string }[]; porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; jiraErr?: string; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean; cwd?: { v: string }; dirs?: Record<string, string[]>; alive?: string; agents?: unknown[]; reads?: string[]; tasklist?: string; openFails?: boolean }
 
 function stubs(on: any, setup: Setup = {}) {
   const files = setup.files ?? {}
@@ -107,7 +108,7 @@ test('a running turn lights the card green, completion clears it', async ($, on)
   stubs(on)
   await $.turn.start({ text: 'go', turnId: 't1' })
   expect((await walkman($, 'board print')).text).toContain('running')
-  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'end_turn' })
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   expect((await walkman($, 'board print')).text).not.toContain('running  ')
 })
 
@@ -118,15 +119,15 @@ test('the pet state file: written when a card runs, again when it stops, and now
   await new Promise((r) => setTimeout(r, 30))
   expect(writes.length).toBeGreaterThan(0)
   expect(writes.every((w) => w.path === '/home/u/.walkman/state/me.json')).toBe(true)
-  const running = JSON.parse(writes[writes.length - 1].text)
+  const running = JSON.parse(writes[writes.length - 1]!.text)
   expect(running.schema).toBe(1)
   expect(running.session).toBe('me')
   expect(running.cards.map((c: any) => c.key + ':' + c.light)).toEqual(['CF1-195:walking'])
   expect(running.cards[0].own).toBe(true) // the session's own worktree: the pet may bring this terminal forward
   expect(writes.some((w) => w.text.includes('/r/'))).toBe(false)
-  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'end_turn' })
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await new Promise((r) => setTimeout(r, 30))
-  expect(JSON.parse(writes[writes.length - 1].text).cards).toEqual([])
+  expect(JSON.parse(writes[writes.length - 1]!.text).cards).toEqual([])
 })
 
 test('/walkman pet on, off and status run fixed commands and say what happened', async ($, on) => {
@@ -168,7 +169,7 @@ test('the Mod never starts or stops the pet on its own: a session, a turn and a 
   stubs(on, { runs })
   await $.turn.start({ text: 'go', turnId: 't1' })
   await walkman($, 'board print')
-  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'end_turn' })
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await new Promise((r) => setTimeout(r, 30))
   expect(runs).toEqual([])
 })

@@ -86,3 +86,32 @@ export function auditPackage({ plugin, marketplace, files, skills }) {
   for (const s of skills) if (!files.includes(`skills/${s}/SKILL.md`)) problems.push(`package: skills/${s} has no SKILL.md`)
   return problems
 }
+
+// `claude plugin validate --strict --json` output. Claude Code 2.1.323 started type-checking every .ts file
+// without allowImportingTsExtensions (it reads no tsconfig), so each `'./x.ts'` import, which Node's
+// --experimental-strip-types needs, is a TS5097 warning. 2.1.322 passes the same tree. Only that warning is
+// tolerated and counted; any other error or warning fails, and a report that cannot be read fails.
+// Remove the tolerance once a Claude Code release no longer reports it.
+export const TS_IMPORT_WARNING = /^error TS5097: An import path can only end with a '\.ts' extension/
+export function auditValidate(stdout) {
+  let report
+  try {
+    report = JSON.parse(stdout)
+  } catch {
+    return { problems: ['validate: could not read the --json report: ' + String(stdout).trim().split('\n').slice(-1)[0]], tolerated: 0 }
+  }
+  if (report.success === true) return { problems: [], tolerated: 0 }
+  const problems = []
+  let tolerated = 0
+  for (const f of [report.manifest, ...(report.contents ?? [])].filter(Boolean)) {
+    const where = String(f.file ?? '').replace(/^.*?\/(?=(core|hooks|tests|checks|skills|\.claude-plugin)\/)/, '')
+    for (const e of f.errors ?? []) problems.push(`validate: ${where} ${e.path ?? ''}: ${e.message}`)
+    for (const w of f.warnings ?? []) {
+      if (TS_IMPORT_WARNING.test(String(w.message))) tolerated++
+      else problems.push(`validate: ${where} ${w.path ?? ''}: ${w.message}`)
+    }
+  }
+  for (const a of report.advice ?? []) problems.push('validate advice: ' + (a.message ?? JSON.stringify(a)))
+  if (problems.length === 0 && tolerated === 0) problems.push('validate: failed without an error or warning in the report')
+  return { problems, tolerated }
+}
