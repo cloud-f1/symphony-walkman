@@ -37,5 +37,5 @@ Outside a session: `npx --yes github:cloud-f1/symphony-walkman doctor` checks th
 
 - A card is a git worktree whose branch starts with a Jira key (`WALK-27-subagent-rows`). To light a card, work in its own worktree.
 - Jira is optional and read-only: the project is a per-repo setting (`WALKMAN_JIRA_PROJECT` in the repo's `.claude/settings.local.json`); credentials are per person (`~/.config/symphony-workflow/.env` or the plugin settings). Keep the global `jira_project` plugin option unset.
-- Titles and the board come from a background lookup through `uvx` and symphony-workflow; a fresh session can show cards without titles for a few seconds, and the first run downloads about 95 MB.
+- Titles and the board come from a background lookup that runs symphony-workflow through `uvx --offline`. A fresh session can show cards without titles for a few seconds. The CLI must be installed once as a uv tool (`setup` does it; `/walkman doctor` prints the command). Lookups never download it.
 - To change a Jira card, use `symphony-workflow` (`transition`, `rollup`), never this plugin.
