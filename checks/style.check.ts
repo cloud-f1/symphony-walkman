@@ -7,6 +7,7 @@ import { renderBoard } from '../core/board.ts'
 import type { CardRow } from '../core/contracts.ts'
 import { buildJql, mergeJira, parseSearch } from '../core/jira.ts'
 import { doctorLines, envNames, hasAnsi } from '../core/doctor.ts'
+import { SW_INSTALL, SW_REF } from '../core/version.ts'
 
 const row = (over: Partial<CardRow>): CardRow => ({ key: 'CF1-195', slug: 'devopsday-visuals', branch: 'CF1-195-devopsday-visuals', worktree: '/w', light: 'walking', sinceMs: 0, ...over })
 
@@ -83,6 +84,10 @@ test('doctor lines: say what is wrong and never show a credential value', () => 
   assert.ok(ok.every((l) => l.startsWith('✓')), ok.join('\n'))
   const bad = doctorLines({ ...base, envNames: { JIRA_BASE_URL: true, JIRA_EMAIL: false }, uvx: false, jiraError: 'exit 1: nope', cardCount: 0 })
   assert.ok(bad.some((l) => l.startsWith('✗ uvx')))
+  const sw = { swRef: SW_REF, swInstall: SW_INSTALL }
+  const missing = doctorLines({ ...base, ...sw, swInstalled: false })
+  assert.ok(missing.some((l) => l.startsWith('✗ symphony-workflow') && l.includes('uv tool install --force --from git+')), missing.join('\n'))
+  assert.ok(doctorLines({ ...base, ...sw, swInstalled: true }).some((l) => l.startsWith('✓ symphony-workflow') && l.includes('installed')))
   assert.ok(bad.some((l) => l.includes('missing JIRA_EMAIL, JIRA_API_TOKEN')))
   assert.ok(bad.some((l) => l.includes('last Jira lookup failed: exit 1')))
   assert.ok(doctorLines({ ...base, project: '' }).some((l) => l.includes('WALKMAN_JIRA_PROJECT is not set')))

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 // @ts-ignore the CLI is plain ESM JavaScript
-import { SW_GIT, atLeast, branchFor, hasAnsi, inferProject, listRepos, pickJiraEnv, planConfigure, withAutoUpdate, withoutGlobalProject, lookupJql, mergeEnvSetting, missingEnv, parseEnvNames, planSetup, pluginInstalled, searchCommand, slugify, worktreeDirFor, writeSetting } from '../cli/walkman.mjs'
+import { SW_GIT, SW_PIN, atLeast, branchFor, hasAnsi, inferProject, listRepos, pickJiraEnv, planConfigure, withAutoUpdate, withoutGlobalProject, lookupJql, mergeEnvSetting, missingEnv, parseEnvNames, planSetup, pluginInstalled, searchCommand, slugify, worktreeDirFor, writeSetting } from '../cli/walkman.mjs'
 
 const CLI = new URL('../cli/walkman.mjs', import.meta.url).pathname
 // The CLI reads WALKMAN_* variables; a machine that has them set must not change what these checks see.
@@ -70,23 +70,28 @@ test('version compare, plugin list match, and a JQL that rejects a bad project',
 })
 
 test('the setup plan lists only what is missing, in order, and never asks for a token', () => {
-  const base = { repo: '/r', claude: true, walkmanInstalled: false, swPluginInstalled: false, uv: true, uvxWarm: false, envFile: '/c/.env', envFilled: false, migrateFrom: '', project: 'JEV', projectSetting: '' }
-  assert.deepEqual(planSetup(base).map((st: { id: string }) => st.id), ['plugin', 'env', 'warm', 'project'])
-  assert.deepEqual(planSetup({ ...base, migrateFrom: '/old/clone' }).map((st: { id: string }) => st.id), ['plugin', 'migrate', 'warm', 'project'])
+  const base = { repo: '/r', claude: true, walkmanInstalled: false, swPluginInstalled: false, uv: true, swInstalled: false, envFile: '/c/.env', envFilled: false, migrateFrom: '', project: 'JEV', projectSetting: '' }
+  assert.deepEqual(planSetup(base).map((st: { id: string }) => st.id), ['plugin', 'env', 'install', 'project'])
+  assert.deepEqual(planSetup({ ...base, migrateFrom: '/old/clone' }).map((st: { id: string }) => st.id), ['plugin', 'migrate', 'install', 'project'])
   // walkman is installed but the skills plugin is not: only the skills plugin step
   const plugin = planSetup({ ...base, walkmanInstalled: true }).find((st: { id: string }) => st.id === 'plugin')
   assert.ok(JSON.stringify(plugin.run).includes('symphony-workflow-ops@symphony-walkman'))
-  const done = { ...base, walkmanInstalled: true, swPluginInstalled: true, uvxWarm: true, envFilled: true, projectSetting: 'JEV' }
+  const done = { ...base, walkmanInstalled: true, swPluginInstalled: true, swInstalled: true, envFilled: true, projectSetting: 'JEV' }
   assert.deepEqual(planSetup(done), [])
   const text = JSON.stringify(planSetup(base))
   assert.ok(!/password|secret/i.test(text))
   assert.ok(!text.includes('git clone'), 'no clone step any more')
+  // the CLI is installed once as a uv tool (outside uv's cache), never warmed through uvx
+  const install = planSetup(base).find((st: { id: string }) => st.id === 'install')
+  assert.deepEqual(install.run, [['uv', ['tool', 'install', '--force', '--from', SW_GIT, 'symphony-workflow']]])
 })
 
-test('the lookup runs the released CLI through uvx, or the older clone when one is configured', () => {
+test('the lookup runs the installed CLI offline through uvx, or the older clone when one is configured', () => {
   const [cmd, args] = searchCommand({ envFile: '/c/.env', legacyDir: '' }, 'project = JEV')
   assert.equal(cmd, 'uvx')
-  assert.deepEqual(args.slice(0, 4), ['--env-file', '/c/.env', '--from', SW_GIT])
+  // --offline + a version pin: uvx uses the uv tool install and never downloads, so a killed lookup leaves no temp env
+  assert.deepEqual(args.slice(0, 6), ['--offline', '--env-file', '/c/.env', '--from', SW_PIN, 'symphony-workflow'])
+  assert.ok(!args.some((x: string) => x.startsWith('git+')))
   assert.equal(args[args.length - 2], 'search')
   const [cmd2, args2, cwd2] = searchCommand({ envFile: '/c/.env', legacyDir: '/clone' }, 'project = JEV')
   assert.equal(cmd2, 'uv')

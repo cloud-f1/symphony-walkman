@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { VERSION } from '../core/version.ts'
+declare const setTimeout: (fn: (value?: unknown) => void, ms: number) => unknown // the test lib has no DOM or Node timer types
 
 const CWD = '/r/.claude/worktrees/a'
 const PORCELAIN =
@@ -8,7 +9,7 @@ const PORCELAIN =
 const DF = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/d 488245288 400000000 77594624 84% /\n'
 
 type Issue = { key: string; status: string; summary: string; assignee: string | null }
-interface Setup { runs?: string[][]; petExit?: Record<string, number>; uname?: string; writes?: { path: string; text: string }[]; porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean; cwd?: { v: string }; dirs?: Record<string, string[]>; alive?: string; agents?: unknown[]; reads?: string[]; tasklist?: string }
+interface Setup { runs?: string[][]; petExit?: Record<string, number>; uname?: string; writes?: { path: string; text: string }[]; porcelain?: string; files?: Record<string, string>; askVerdict?: boolean; worktreeOkCalls?: number; env?: Record<string, string>; jiraOut?: string; jiraExit?: number; jiraErr?: string; board?: { todo?: Issue[]; inProgress?: Issue[]; done?: Issue[] }; image?: boolean; cwd?: { v: string }; dirs?: Record<string, string[]>; alive?: string; agents?: unknown[]; reads?: string[]; tasklist?: string; openFails?: boolean }
 
 function stubs(on: any, setup: Setup = {}) {
   const files = setup.files ?? {}
@@ -48,7 +49,7 @@ function stubs(on: any, setup: Setup = {}) {
       const cat = q.includes('Done') ? 'done' : q.includes('In Progress') ? 'inProgress' : 'todo'
       return { value: { exitCode: setup.jiraExit ?? 0, stdout: JSON.stringify({ issues: setup.board?.[cat] ?? [] }), stderr: setup.jiraExit ? 'Jira API error 401' : '' } }
     }
-    if (cmd === 'uv' || cmd === 'uvx') { jiraCalls.push(e.argv.join(' ')); if (e.init?.env) jiraEnvs.push(e.init.env); return { value: { exitCode: setup.jiraExit ?? 0, stdout: setup.jiraOut ?? '', stderr: setup.jiraExit ? 'Jira API error 401' : '' } } }
+    if (cmd === 'uv' || cmd === 'uvx') { jiraCalls.push(e.argv.join(' ')); if (e.init?.env) jiraEnvs.push(e.init.env); return { value: { exitCode: setup.jiraExit ?? 0, stdout: setup.jiraOut ?? '', stderr: setup.jiraExit ? setup.jiraErr ?? 'Jira API error 401' : '' } } }
     if (cmd === 'uname') return { value: { exitCode: 0, stdout: (setup.uname ?? 'Darwin') + '\n', stderr: '' } }
     if (cmd === 'open' || cmd === 'pkill' || cmd === 'pgrep') { setup.runs?.push(e.argv); return { value: { exitCode: setup.petExit?.[cmd] ?? 0, stdout: '', stderr: '' } } }
     if (cmd === 'claude') return { value: { exitCode: 0, stdout: '2.1.296 (Claude Code)\n', stderr: '' } }
@@ -107,7 +108,7 @@ test('a running turn lights the card green, completion clears it', async ($, on)
   stubs(on)
   await $.turn.start({ text: 'go', turnId: 't1' })
   expect((await walkman($, 'board print')).text).toContain('running')
-  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'end_turn' })
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   expect((await walkman($, 'board print')).text).not.toContain('running  ')
 })
 
@@ -118,15 +119,15 @@ test('the pet state file: written when a card runs, again when it stops, and now
   await new Promise((r) => setTimeout(r, 30))
   expect(writes.length).toBeGreaterThan(0)
   expect(writes.every((w) => w.path === '/home/u/.walkman/state/me.json')).toBe(true)
-  const running = JSON.parse(writes[writes.length - 1].text)
+  const running = JSON.parse(writes[writes.length - 1]!.text)
   expect(running.schema).toBe(1)
   expect(running.session).toBe('me')
   expect(running.cards.map((c: any) => c.key + ':' + c.light)).toEqual(['CF1-195:walking'])
   expect(running.cards[0].own).toBe(true) // the session's own worktree: the pet may bring this terminal forward
   expect(writes.some((w) => w.text.includes('/r/'))).toBe(false)
-  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'end_turn' })
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await new Promise((r) => setTimeout(r, 30))
-  expect(JSON.parse(writes[writes.length - 1].text).cards).toEqual([])
+  expect(JSON.parse(writes[writes.length - 1]!.text).cards).toEqual([])
 })
 
 test('/walkman pet on, off and status run fixed commands and say what happened', async ($, on) => {
@@ -168,7 +169,7 @@ test('the Mod never starts or stops the pet on its own: a session, a turn and a 
   stubs(on, { runs })
   await $.turn.start({ text: 'go', turnId: 't1' })
   await walkman($, 'board print')
-  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'end_turn' })
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await new Promise((r) => setTimeout(r, 30))
   expect(runs).toEqual([])
 })
@@ -291,13 +292,26 @@ test('a waiting card keeps its first-seen time instead of resetting to 0:00 on e
   expect(dbg).toContain('CF1-195:waiting')
 })
 
-test('without a clone, the lookup runs the released CLI through uvx with the credentials file', async ($, on) => {
+test('without a clone, the lookup runs the installed CLI offline through uvx with the credentials file', async ($, on) => {
   const s = stubs(on, { env: { WALKMAN_JIRA_PROJECT: 'CF1', WALKMAN_JIRA_ENV_FILE: '/creds/.env' }, files: { '/creds/.env': '' }, jiraOut: JIRA_OUT })
   const out = (await walkman($, 'board print')).text
   expect(out).toContain('DevOpsDays visuals')
-  expect(s.jiraCalls[0]).toContain('uvx --env-file /creds/.env --from git+https://github.com/cloud-f1/symphony-workflow@v')
+  // never a git+ source at run time: resolving one re-downloads into uv's cache and a killed run leaves ~200 MB behind
+  expect(s.jiraCalls[0]).toContain('uvx --offline --env-file /creds/.env --from symphony-workflow==')
+  for (const c of s.jiraCalls) expect(c).not.toContain('git+')
   expect(s.jiraCalls[0]).toContain('symphony-workflow search')
   expect(s.jiraCalls[0]).not.toMatch(/transition|comment|create|rollup|add-subtasks|call /)
+})
+
+test('when the CLI is not installed, the lookup says how to install it instead of downloading it', async ($, on) => {
+  stubs(on, { env: { WALKMAN_JIRA_PROJECT: 'CF1', WALKMAN_JIRA_ENV_FILE: '/creds/.env' }, files: { '/creds/.env': '' }, jiraExit: 1, jiraErr: '  × No solution found when resolving tool dependencies:\n  hint: Packages were unavailable because the network was disabled.' })
+  const out = (await walkman($, 'board print')).text
+  expect(out).toContain('symphony-workflow v')
+  expect(out).toContain('not installed')
+  expect(out).toContain('setup')
+  const doc = (await walkman($, 'doctor')).text
+  expect(doc).toContain('✗ symphony-workflow v')
+  expect(doc).toContain('uv tool install --force --from git+')
 })
 
 test('a missing credentials file says where it looked and never runs anything', async ($, on) => {
@@ -325,6 +339,7 @@ test('/walkman doctor words the state without showing credential values', async 
   expect(out).toContain('values not shown')
   expect(out).not.toContain('supersecret')
   expect(out).toContain('uvx is available')
+  expect(out).toContain('✓ symphony-workflow v')
 })
 
 test('a removed or unknown option says so and shows the help instead of the board', async ($, on) => {

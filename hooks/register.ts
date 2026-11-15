@@ -11,7 +11,7 @@ import { buildJql, isProject, mergeJira, parseSearch } from '../core/jira.ts'
 import { BOARD_CAP, boardJql, boardOverview, boardText, buildBoard, parseIssuesJson } from '../core/jiraboard.ts'
 import type { Board, BoardIssue } from '../core/jiraboard.ts'
 import { doctorLines, envNames, hasAnsi } from '../core/doctor.ts'
-import { SW_GIT, SW_REF, VERSION } from '../core/version.ts'
+import { SW_INSTALL, SW_PIN, SW_REF, VERSION, swNotInstalled } from '../core/version.ts'
 import type { JiraIssue } from '../core/jira.ts'
 import { HELP, LEGEND, SUBCOMMANDS, plain, stylePane, styleBand } from '../core/style.ts'
 import type { Line, PaneLine, Seg, Tone } from '../core/style.ts'
@@ -193,7 +193,8 @@ type SwResult = { ok: true; stdout: string } | { ok: false; error: string }
 
 // Runs one read-only symphony-workflow command. Fixed arguments; the only variable parts are JQL built from
 // validated pieces. With a symphony-workflow clone configured, run it there (the older way); otherwise run the
-// released CLI through uvx with the credentials file, so no clone or `uv sync` is needed. Never rejects.
+// release that setup installed as a uv tool, through `uvx --offline` with the credentials file, so no clone or
+// `uv sync` is needed and a lookup never downloads (see SW_PIN). Never rejects.
 async function runSw($: Engine, settings: { dir: string; envFile: string }, args: string[]): Promise<SwResult> {
   const { dir, envFile } = settings
   try {
@@ -203,14 +204,15 @@ async function runSw($: Engine, settings: { dir: string; envFile: string }, args
       run = await $.process.run(['uv', 'run', '--env-file', '.env', 'symphony-workflow', ...args], { cwd: dir, timeoutMs: 20000 })
     } else if (creds) {
       if (!/^https:\/\/[^\s/]+/.test(creds.JIRA_BASE_URL)) return { ok: false, error: 'the Jira site URL must start with https://' }
-      run = await $.process.run(['uvx', '--from', SW_GIT, 'symphony-workflow', ...args], { env: { ...creds }, timeoutMs: 90000 }) // credentials go in the child's environment, never in argv
+      run = await $.process.run(['uvx', '--offline', '--from', SW_PIN, 'symphony-workflow', ...args], { env: { ...creds }, timeoutMs: 90000 }) // credentials go in the child's environment, never in argv
     } else if (set.length > 0) {
       return { ok: false, error: `Jira settings are incomplete (have ${set.join(', ')}; need URL, email and token)` }
     } else if (envFile === '' || !(await $.fs.exists(envFile))) {
       return { ok: false, error: `no credentials: set the plugin's Jira URL, email and token, or put them in ${envFile || DEFAULT_ENV_FILE}; run: ${SETUP_COMMAND}` }
     } else {
-      run = await $.process.run(['uvx', '--env-file', envFile, '--from', SW_GIT, 'symphony-workflow', ...args], { timeoutMs: 90000 })
+      run = await $.process.run(['uvx', '--offline', '--env-file', envFile, '--from', SW_PIN, 'symphony-workflow', ...args], { timeoutMs: 90000 })
     }
+    if (run.exitCode !== 0 && dir === '' && swNotInstalled(run.stderr)) return { ok: false, error: `symphony-workflow ${SW_REF} is not installed; run: ${SETUP_COMMAND}` }
     return run.exitCode === 0 ? { ok: true, stdout: run.stdout } : { ok: false, error: `exit ${run.exitCode}: ${(run.stderr || run.stdout).trim().slice(0, 100)}` }
   } catch (err) {
     return { ok: false, error: 'threw: ' + String(err).slice(0, 100) }
@@ -634,7 +636,7 @@ async function versionText($: Engine): Promise<string> {
   } catch {
     // not on PATH: leave unknown
   }
-  return ['symphony-walkman ' + VERSION, `Jira lookup runs symphony-workflow ${SW_REF} through uvx`, 'Claude Code ' + claude].join('\n')
+  return ['symphony-walkman ' + VERSION, `Jira lookup runs symphony-workflow ${SW_REF} (uv tool, through uvx --offline)`, 'Claude Code ' + claude].join('\n')
 }
 
 async function doctorText($: Engine): Promise<string> {
@@ -655,8 +657,10 @@ async function doctorText($: Engine): Promise<string> {
   } catch {
     uvx = false
   }
+  // From the last lookup, not a probe: the Mod runs nothing but searches (scripts/audit.mjs).
+  const swInstalled = jira.error?.includes(`symphony-workflow ${SW_REF} is not installed`) ? false : jira.at !== -Infinity && !jira.error ? true : undefined
   const { creds, set } = await jiraCreds($)
-  return ['Walkman doctor', ...doctorLines({ project, cloneDir: dir, envFile, envNames: names, envHasAnsi: ansi, uvx, settingsCreds: creds ? 'complete' : set.length > 0 ? 'partial:' + set.join('+') : 'none', cardCount: cache.rows.length, jiraError: jira.error, jiraCount: jira.at === -Infinity ? undefined : jira.issues.length, setupCommand: SETUP_COMMAND })].join('\n')
+  return ['Walkman doctor', ...doctorLines({ project, cloneDir: dir, envFile, envNames: names, envHasAnsi: ansi, uvx, swInstalled, swRef: SW_REF, swInstall: SW_INSTALL, settingsCreds: creds ? 'complete' : set.length > 0 ? 'partial:' + set.join('+') : 'none', cardCount: cache.rows.length, jiraError: jira.error, jiraCount: jira.at === -Infinity ? undefined : jira.issues.length, setupCommand: SETUP_COMMAND })].join('\n')
 }
 
 // The open arguments of the one pane; its title says how many cards need you ("Walkman · 2"), as a tab shows it.
@@ -806,7 +810,7 @@ export function register(on: On, options?: PluginOptions) {
     }
     await refresh($)
     if (jira.at === -Infinity) {
-      // first board: wait for the lookup so titles show, but never more than a few seconds (a cold uvx download is slow)
+      // first board: wait for the lookup so titles show, but never more than a few seconds (uvx starts the installed CLI in about 2s)
       const first = ensureJira($, await $.clock.now(), cache.rows.map((r) => r.key))
       if (first) await Promise.race([first, new Promise<void>((resolve) => $.clock.after(8000, () => resolve()))])
     }

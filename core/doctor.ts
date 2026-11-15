@@ -16,11 +16,14 @@ export function envNames(text: string): Record<string, boolean> {
 
 export type DoctorFacts = {
   project: string
-  cloneDir: string // '' when the released CLI is used through uvx
+  cloneDir: string // '' when the installed release is run through uvx
   envFile: string
   envNames: Record<string, boolean> | undefined // undefined: the file does not exist
   envHasAnsi?: boolean // the file holds terminal color codes
   uvx: boolean
+  swInstalled?: boolean // the pinned release is installed as a uv tool (undefined: not checked)
+  swRef?: string // that release, e.g. v0.12.0
+  swInstall?: string // the command that installs it
   settingsCreds: string // 'complete', 'none' or 'partial:URL+email'
   cardCount: number
   jiraError: string | undefined
@@ -36,6 +39,8 @@ export function doctorLines(f: DoctorFacts): string[] {
     if (f.cloneDir) out.push(`✓ using the symphony-workflow clone at ${f.cloneDir}`)
     else {
       out.push(f.uvx ? '✓ uvx is available' : '✗ uvx not found: install uv (https://docs.astral.sh/uv/)')
+      if (f.swInstalled === true) out.push(`✓ symphony-workflow ${f.swRef ?? ''} is installed (uv tool)`)
+      if (f.swInstalled === false) out.push(`✗ symphony-workflow ${f.swRef ?? ''} is not installed: run ${f.swInstall ?? ''}`)
       if (f.settingsCreds === 'complete') {
         out.push('✓ Jira credentials come from the plugin settings (URL, email and token are set; values not shown)')
         out.push(f.envNames === undefined ? `! the ticket skills and the CLI read ${f.envFile}, which does not exist yet: run ${f.setupCommand} if you want them to work too` : `✓ credentials file ${f.envFile} exists too, for the ticket skills and the CLI`)
